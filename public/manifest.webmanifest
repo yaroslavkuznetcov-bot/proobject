@@ -1,0 +1,11 @@
+{
+  "name": "ProОбъект",
+  "short_name": "ProОбъект",
+  "description": "Система автоматизированного сбора информации",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "portrait-primary",
+  "icons": []
+}
