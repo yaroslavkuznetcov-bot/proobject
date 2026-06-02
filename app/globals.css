@@ -72,6 +72,20 @@ a { color: inherit; }
   font-weight: 800;
   margin-bottom: 18px;
 }
+.brandLine { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.versionBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  margin-top: 6px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(37,99,235,.12);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: -.01em;
+}
 h1 { margin: 0; font-size: clamp(34px, 5vw, 56px); letter-spacing: -.055em; line-height: .94; }
 .heroSubtitle { margin: 10px 0 0; color: var(--text); font-size: clamp(15px,2vw,20px); font-weight: 800; letter-spacing: -.02em; }
 .heroText { margin: 16px 0 0; max-width: 650px; color: var(--muted); font-size: 16px; line-height: 1.6; }
@@ -110,14 +124,16 @@ html[data-theme="dark"] .primaryButton { background: linear-gradient(135deg, #e5
 .message.success { color: var(--success); }
 .message.error { color: var(--danger); }
 .hint { margin: 16px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
-.journalList { display: grid; gap: 12px; margin-top: 14px; }
-.journalItem { border: 1px solid var(--line); background: var(--surface-solid); border-radius: 24px; padding: 18px; }
-.journalHead { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
-.journalHead strong { display: block; font-size: 16px; }
-.journalHead span { display: block; color: var(--muted); margin-top: 4px; font-size: 13px; }
-.journalItem p { margin: 14px 0; color: var(--text); line-height: 1.55; white-space: pre-wrap; }
-.miniActions button, .objectList button { border: 0; border-radius: 12px; padding: 8px 10px; background: rgba(148,163,184,.16); color: var(--text); font-weight: 800; }
-.photoLink, .noPhoto { display: inline-flex; padding: 8px 10px; border-radius: 999px; background: rgba(37,99,235,.12); color: var(--accent); font-weight: 850; text-decoration: none; font-size: 13px; }
+.journalList { display: grid; gap: 8px; margin-top: 12px; }
+.journalItem { border: 1px solid var(--line); background: var(--surface-solid); border-radius: 18px; padding: 12px 14px; }
+.journalHead { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+.journalMeta { min-width: 0; }
+.journalHead strong { display: block; font-size: 14px; line-height: 1.25; }
+.journalHead span { display: block; color: var(--muted); margin-top: 2px; font-size: 12px; line-height: 1.25; }
+.journalActions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+.journalItem p { margin: 8px 0 0; color: var(--text); line-height: 1.4; white-space: pre-wrap; font-size: 14px; }
+.miniActions button, .objectList button { border: 0; border-radius: 12px; padding: 7px 9px; background: rgba(148,163,184,.16); color: var(--text); font-weight: 800; }
+.photoLink, .noPhoto { display: inline-flex; padding: 6px 9px; border-radius: 999px; background: rgba(37,99,235,.12); color: var(--accent); font-weight: 850; text-decoration: none; font-size: 12px; }
 .noPhoto { background: rgba(148,163,184,.16); color: var(--muted); }
 .empty { padding: 24px; border-radius: 22px; text-align: center; color: var(--muted); background: rgba(148,163,184,.1); }
 .checkList { margin: 12px 0 0; padding-left: 18px; color: var(--muted); line-height: 1.7; }
@@ -131,7 +147,8 @@ html[data-theme="dark"] .primaryButton { background: linear-gradient(135deg, #e5
   .grid { grid-template-columns: 1fr; }
   .twoCols { grid-template-columns: 1fr; }
   .formCard, .sideCard, .loginCard { border-radius: 26px; padding: 18px; }
-  .cardTitle, .journalHead { flex-direction: column; align-items: stretch; }
+  .cardTitle { flex-direction: column; align-items: stretch; }
+  .journalHead { align-items: flex-start; }
   .topActions, .buttonRow { width: 100%; }
   .topActions button, .buttonRow button { flex: 1; }
 }

@@ -1,9 +1,9 @@
 export type UserRole = "customer" | "contractor" | "curator";
 
 export type AppUser = {
-  login: string;
+  id: string;
+  name: string;
   role: UserRole;
-  name?: string;
 };
 
 export type ObjectItem = {
@@ -21,26 +21,25 @@ export type JournalEntry = {
   id: string;
   date: string;
   object: string;
-  objectId?: string;
+  objectId: string;
   site: string;
   work: string;
-  photo?: string;
-  photoUrl?: string;
-};
-
-export type JournalPayload = {
-  id?: string;
-  object: string;
-  objectId?: string;
-  site: string;
-  work: string;
-  photo?: string;
-  fileName?: string;
-  fileMimeType?: string;
+  photoUrl: string;
 };
 
 export type JournalBootstrapData = {
   objects: ObjectItem[];
   sites: SiteItem[];
   journal: JournalEntry[];
+};
+
+export type JournalPayload = {
+  id?: string;
+  object: string;
+  objectId: string;
+  site: string;
+  work: string;
+  photo?: string;
+  fileName?: string;
+  fileMimeType?: string;
 };

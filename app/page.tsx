@@ -51,7 +51,7 @@ function formatDate(value: string) {
 export default function HomePage() {
   const [user, setUser] = useState<AppUser | null>(null);
   const [login, setLogin] = useState("");
-  const [password, setPassword] = useState("curator123");
+  const [password, setPassword] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [theme, setTheme] = useState<Theme>("light");
 
@@ -274,8 +274,7 @@ export default function HomePage() {
     return (
       <main className="page authPage">
         <section className="loginCard">
-          <div className="badge">ProОбъект v0.2</div>
-          <h1>ProОбъект</h1>
+          <div className="brandLine"><h1>ProОбъект</h1><span className="versionBadge">v0.2.6</span></div>
           <p className="heroSubtitle">система автоматизированного сбора информации</p>
           <form className="form" onSubmit={handleLogin}>
             <div className="fieldGroup">
@@ -312,10 +311,9 @@ export default function HomePage() {
       <div className="shell">
         <section className="heroCard">
           <div>
-            <div className="badge">Полевой журнал · одно приложение = один заказчик</div>
-            <h1>ProОбъект</h1>
+            <div className="brandLine"><h1>ProОбъект</h1><span className="versionBadge">v0.2.6</span></div>
             <p className="heroSubtitle">система автоматизированного сбора информации</p>
-            <p className="heroText">Вы вошли как <b>{roleLabel[user.role]}</b>. Доступ ограничен ролью пользователя.</p>
+            <p className="heroText">Вы вошли как <b>{roleLabel[user.role]}</b></p>
           </div>
           <div className="topActions">
             <button className="ghostButton" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>{theme === "light" ? "Темная тема" : "Светлая тема"}</button>
@@ -333,7 +331,7 @@ export default function HomePage() {
                   <h2>Общий журнал работ</h2>
                   <p>{writable ? "Заполните запись или просмотрите историю." : "Доступен просмотр истории и фото."}</p>
                 </div>
-                <div className={`statusPill ${state === "success" ? "ready" : ""}`}>{editing ? "Редактирование" : state === "success" ? "Готово" : "v0.2"}</div>
+                <div className={`statusPill ${state === "success" ? "ready" : ""}`}>{editing ? "Редактирование" : state === "success" ? "Готово" : "Запись"}</div>
               </div>
 
               <form className="form" onSubmit={saveJournal}>
@@ -397,14 +395,16 @@ export default function HomePage() {
                   return (
                     <article className="journalItem" key={entry.id}>
                       <div className="journalHead">
-                        <div>
+                        <div className="journalMeta">
                           {hideObjectInCustomerView ? null : <strong>{entry.object}</strong>}
                           <span>{entry.site} · {formatDate(entry.date)}</span>
                         </div>
-                        {manageable ? <div className="miniActions"><button onClick={() => startEdit(entry)}>Править</button><button onClick={() => deleteEntry(entry.id)}>Удалить</button></div> : null}
+                        <div className="journalActions">
+                          {entry.photoUrl ? <a className="photoLink" href={entry.photoUrl} target="_blank" rel="noreferrer">Фото</a> : <span className="noPhoto">Без фото</span>}
+                          {manageable ? <div className="miniActions"><button onClick={() => startEdit(entry)}>Править</button><button onClick={() => deleteEntry(entry.id)}>Удалить</button></div> : null}
+                        </div>
                       </div>
                       <p>{entry.work}</p>
-                      {entry.photoUrl ? <a className="photoLink" href={entry.photoUrl} target="_blank" rel="noreferrer">Открыть фото</a> : <span className="noPhoto">Без фото</span>}
                     </article>
                   );
                 })}
@@ -413,14 +413,16 @@ export default function HomePage() {
           </div>
 
           <aside className="sideStack">
-            <div className="sideCard">
-              <h3>Роль: {roleLabel[user.role]}</h3>
-              <ul className="checkList">
-                <li>Заказчик: просмотр истории и фото</li>
-                <li>Подрядчик: добавление записей и фото</li>
-                <li>Куратор: полное управление</li>
-              </ul>
-            </div>
+            {manageable ? (
+              <div className="sideCard">
+                <h3>Роль: {roleLabel[user.role]}</h3>
+                <ul className="checkList">
+                  <li>Заказчик: просмотр истории и фото</li>
+                  <li>Подрядчик: добавление записей и фото</li>
+                  <li>Куратор: полное управление</li>
+                </ul>
+              </div>
+            ) : null}
 
             {manageable ? (
               <div className="sideCard">
