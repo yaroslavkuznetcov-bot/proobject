@@ -6,7 +6,7 @@ function doGet(e) {
       return jsonResponse(getData());
     }
 
-    return jsonResponse({ status: "OK", message: "ProОбъект API v0.2.3" });
+    return jsonResponse({ status: "OK", message: "ProОбъект API v0.3.0" });
   } catch (error) {
     return jsonResponse({
       status: "ERROR",
@@ -26,6 +26,10 @@ function doPost(e) {
     const data = body.data || {};
 
     if (action === "authenticate") return jsonResponse(authenticate(data));
+    if (action === "getUsers") return jsonResponse(getUsers());
+    if (action === "addUser") return jsonResponse(addUser(data));
+    if (action === "updateUser") return jsonResponse(updateUser(data));
+    if (action === "deleteUser") return jsonResponse(deleteUser(data));
     if (action === "saveData") return jsonResponse({ status: saveData(data) });
     if (action === "updateJournalEntry") return jsonResponse({ status: updateJournalEntry(data) });
     if (action === "deleteJournalEntry") return jsonResponse({ status: deleteJournalEntry(data) });
@@ -134,6 +138,82 @@ function authenticate(data) {
   return { status: "ERROR", message: "Неверный логин или пароль" };
 }
 
+
+function getUsers() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const usersSheet = getSheetOrCreate_(ss, "USERS", ["login", "password", "role"]);
+  const rows = usersSheet.getDataRange().getValues().slice(1);
+
+  const users = rows
+    .map(function(row, index) {
+      const login = String(row[0] || "").trim();
+      const role = normalizeRole_(row[2]);
+      return {
+        id: String(index + 2),
+        login: login,
+        role: role,
+        roleName: roleName_(role)
+      };
+    })
+    .filter(function(user) { return user.login !== ""; });
+
+  return { status: "OK", users: users };
+}
+
+function addUser(data) {
+  const login = String(data.login || "").trim();
+  const password = String(data.password || "");
+  const role = normalizeRole_(data.role);
+
+  if (!login || !password) throw new Error("Введите логин и пароль");
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const usersSheet = getSheetOrCreate_(ss, "USERS", ["login", "password", "role"]);
+  const rows = usersSheet.getDataRange().getValues();
+
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0] || "").trim().toLowerCase() === login.toLowerCase()) {
+      throw new Error("Пользователь с таким логином уже существует");
+    }
+  }
+
+  usersSheet.appendRow([login, password, role]);
+  return { status: "OK" };
+}
+
+function updateUser(data) {
+  const id = Number(data.id);
+  const login = String(data.login || "").trim();
+  const password = String(data.password || "");
+  const role = normalizeRole_(data.role);
+
+  if (!id || id < 2) throw new Error("Не передан ID пользователя");
+  if (!login) throw new Error("Введите логин");
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const usersSheet = getSheetOrCreate_(ss, "USERS", ["login", "password", "role"]);
+
+  if (id > usersSheet.getLastRow()) throw new Error("Пользователь не найден");
+
+  usersSheet.getRange(id, 1).setValue(login);
+  if (password) usersSheet.getRange(id, 2).setValue(password);
+  usersSheet.getRange(id, 3).setValue(role);
+
+  return { status: "OK" };
+}
+
+function deleteUser(data) {
+  const id = Number(data.id);
+  if (!id || id < 2) throw new Error("Не передан ID пользователя");
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const usersSheet = getSheetOrCreate_(ss, "USERS", ["login", "password", "role"]);
+
+  if (id > usersSheet.getLastRow()) throw new Error("Пользователь не найден");
+  usersSheet.deleteRow(id);
+  return { status: "OK" };
+}
+
 function getData() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -175,11 +255,14 @@ function getData() {
     return item.object || item.site || item.work || item.photoUrl;
   }).reverse();
 
+  const usersResult = getUsers();
+
   return {
     status: "OK",
     objects: objects,
     sites: sites,
-    journal: journal
+    journal: journal,
+    users: usersResult.users || []
   };
 }
 

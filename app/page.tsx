@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
-import type { AppUser, JournalBootstrapData, JournalEntry, JournalPayload, UserRole } from "@/lib/types";
+import type { AppUser, JournalBootstrapData, JournalEntry, JournalPayload, ManagedUser, UserRole } from "@/lib/types";
 
 const CUSTOM_SITE_VALUE = "__custom__";
 const MAX_PHOTO_SIZE_MB = 8;
@@ -68,6 +68,10 @@ export default function HomePage() {
   const [editing, setEditing] = useState<JournalEntry | null>(null);
   const [newObject, setNewObject] = useState("");
   const [newSite, setNewSite] = useState("");
+  const [newUserLogin, setNewUserLogin] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
+  const [newUserRole, setNewUserRole] = useState<UserRole>("contractor");
+  const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -96,7 +100,7 @@ export default function HomePage() {
       const json = await response.json();
       if (!response.ok) throw new Error(json.message || "Не удалось загрузить данные");
       setBootstrap(json);
-      setObjectId((current) => current || json.objects?.[0]?.id || "");
+      setObjectId((current) => current || "");
       setState("idle");
       setMessage("");
     } catch (error) {
@@ -120,8 +124,7 @@ export default function HomePage() {
   );
 
   useEffect(() => {
-    const firstSite = canWrite(user?.role) ? (filteredSites[0]?.id || CUSTOM_SITE_VALUE) : "";
-    setSiteId(firstSite);
+    setSiteId("");
     setCustomSite("");
   }, [objectId, filteredSites.length, user?.role]);
 
@@ -132,8 +135,9 @@ export default function HomePage() {
 
   const visibleJournal = useMemo(() => {
     const text = query.trim().toLowerCase();
+    if (!objectId) return [];
     return bootstrap.journal.filter((entry) => {
-      const objectMatch = objectId ? entry.objectId === objectId || entry.object === selectedObject?.name : true;
+      const objectMatch = entry.objectId === objectId || entry.object === selectedObject?.name;
       const siteMatch = siteId && siteId !== CUSTOM_SITE_VALUE ? entry.site === selectedSite?.name : true;
       const textMatch = !text || `${entry.object} ${entry.site} ${entry.work}`.toLowerCase().includes(text);
       return objectMatch && siteMatch && textMatch;
@@ -270,11 +274,66 @@ export default function HomePage() {
     await loadData();
   }
 
+  function resetUserForm() {
+    setNewUserLogin("");
+    setNewUserPassword("");
+    setNewUserRole("contractor");
+    setEditingUser(null);
+  }
+
+  function startUserEdit(item: ManagedUser) {
+    setEditingUser(item);
+    setNewUserLogin(item.login);
+    setNewUserPassword("");
+    setNewUserRole(item.role);
+  }
+
+  async function saveUser() {
+    if (!newUserLogin.trim()) return setMessage("Введите логин пользователя");
+    if (!editingUser && !newUserPassword) return setMessage("Введите пароль пользователя");
+
+    const response = await fetch("/api/users", {
+      method: editingUser ? "PATCH" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: editingUser?.id,
+        login: newUserLogin.trim(),
+        password: newUserPassword,
+        role: newUserRole
+      })
+    });
+    const json = await response.json();
+    if (!response.ok || json.status === "ERROR") {
+      setState("error");
+      setMessage(json.message || "Не удалось сохранить пользователя");
+      return;
+    }
+
+    resetUserForm();
+    setState("success");
+    setMessage(editingUser ? "Пользователь обновлен" : "Пользователь создан");
+    await loadData();
+  }
+
+  async function deleteUser(id: string, login: string) {
+    if (login === user?.id) return setMessage("Нельзя удалить текущего пользователя");
+    if (!confirm(`Удалить пользователя ${login}?`)) return;
+
+    const response = await fetch("/api/users", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id })
+    });
+    const json = await response.json();
+    if (!response.ok || json.status === "ERROR") setMessage(json.message || "Не удалось удалить пользователя");
+    else await loadData();
+  }
+
   if (!user) {
     return (
       <main className="page authPage">
         <section className="loginCard">
-          <div className="brandLine"><h1>ProОбъект</h1><span className="versionBadge">v0.2.6</span></div>
+          <div className="brandLine"><h1>ProОбъект</h1><span className="versionBadge">v0.3.1</span></div>
           <p className="heroSubtitle">система автоматизированного сбора информации</p>
           <form className="form" onSubmit={handleLogin}>
             <div className="fieldGroup">
@@ -311,7 +370,7 @@ export default function HomePage() {
       <div className="shell">
         <section className="heroCard">
           <div>
-            <div className="brandLine"><h1>ProОбъект</h1><span className="versionBadge">v0.2.6</span></div>
+            <div className="brandLine"><h1>ProОбъект</h1><span className="versionBadge">v0.3.1</span></div>
             <p className="heroSubtitle">система автоматизированного сбора информации</p>
             <p className="heroText">Вы вошли как <b>{roleLabel[user.role]}</b></p>
           </div>
@@ -339,13 +398,14 @@ export default function HomePage() {
                   <div className="fieldGroup">
                     <label htmlFor="object">Объект</label>
                     <select id="object" className="field" value={objectId} onChange={(event) => setObjectId(event.target.value)} disabled={isBusy || bootstrap.objects.length === 0}>
+                      <option value="">Выберите объект</option>
                       {bootstrap.objects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                     </select>
                   </div>
                   <div className="fieldGroup">
                     <label htmlFor="site">Участок</label>
                     <select id="site" className="field" value={siteId} onChange={(event) => setSiteId(event.target.value)} disabled={isBusy || !objectId}>
-                      {!writable ? <option value="">Все участки</option> : null}
+                      <option value="">Все участки</option>
                       {filteredSites.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                       {manageable ? <option value={CUSTOM_SITE_VALUE}>+ Свой участок</option> : null}
                     </select>
@@ -421,6 +481,40 @@ export default function HomePage() {
                   <li>Подрядчик: добавление записей и фото</li>
                   <li>Куратор: полное управление</li>
                 </ul>
+              </div>
+            ) : null}
+
+            {manageable ? (
+              <div className="sideCard">
+                <h3>Пользователи</h3>
+                <div className="fieldGroup compact">
+                  <label>{editingUser ? "Редактируемый пользователь" : "Новый пользователь"}</label>
+                  <input className="field" value={newUserLogin} onChange={(event) => setNewUserLogin(event.target.value)} placeholder="Логин" />
+                  <input className="field" type="password" value={newUserPassword} onChange={(event) => setNewUserPassword(event.target.value)} placeholder={editingUser ? "Новый пароль, если нужно изменить" : "Пароль"} />
+                  <select className="field" value={newUserRole} onChange={(event) => setNewUserRole(event.target.value as UserRole)}>
+                    <option value="customer">Заказчик</option>
+                    <option value="contractor">Подрядчик</option>
+                    <option value="curator">Куратор</option>
+                  </select>
+                  <div className="buttonRow tight">
+                    <button className="primaryButton" type="button" onClick={saveUser}>{editingUser ? "Сохранить" : "Добавить"}</button>
+                    {editingUser ? <button className="ghostButton" type="button" onClick={resetUserForm}>Отменить</button> : null}
+                  </div>
+                </div>
+                <div className="userList">
+                  {(bootstrap.users || []).map((item) => (
+                    <div key={item.id} className="userRow">
+                      <div>
+                        <b>{item.login}</b>
+                        <span>{item.roleName}</span>
+                      </div>
+                      <div className="miniActions">
+                        <button type="button" onClick={() => startUserEdit(item)}>Править</button>
+                        <button type="button" onClick={() => deleteUser(item.id, item.login)} disabled={item.login === user.id}>Удалить</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : null}
 

@@ -152,3 +152,10 @@ html[data-theme="dark"] .primaryButton { background: linear-gradient(135deg, #e5
   .topActions, .buttonRow { width: 100%; }
   .topActions button, .buttonRow button { flex: 1; }
 }
+.buttonRow.tight { gap: 8px; }
+.buttonRow.tight .primaryButton, .buttonRow.tight .ghostButton { flex: 1; width: auto; }
+.userList { display: grid; gap: 8px; margin-top: 12px; }
+.userRow { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface-solid); }
+.userRow b { display: block; font-size: 14px; overflow-wrap: anywhere; }
+.userRow span { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.userRow button:disabled { opacity: .45; cursor: not-allowed; }

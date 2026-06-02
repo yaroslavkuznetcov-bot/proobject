@@ -6,6 +6,13 @@ export type AppUser = {
   role: UserRole;
 };
 
+export type ManagedUser = {
+  id: string;
+  login: string;
+  role: UserRole;
+  roleName: string;
+};
+
 export type ObjectItem = {
   id: string;
   name: string;
@@ -31,6 +38,7 @@ export type JournalBootstrapData = {
   objects: ObjectItem[];
   sites: SiteItem[];
   journal: JournalEntry[];
+  users?: ManagedUser[];
 };
 
 export type JournalPayload = {
