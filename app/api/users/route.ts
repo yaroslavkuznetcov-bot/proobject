@@ -18,28 +18,25 @@ async function proxy(action: string, data: unknown = {}) {
   catch { return NextResponse.json({ status: text || "OK" }, { status: response.status }); }
 }
 
-export async function GET() {
-  return proxy("getUsers");
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  return proxy("getUsers", { login: searchParams.get("login") || "" });
 }
 
 export async function POST(request: Request) {
-  const data = (await request.json()) as { login?: string; password?: string; role?: string };
-  if (!data.login?.trim() || !data.password) {
-    return NextResponse.json({ message: "Введите логин и пароль" }, { status: 400 });
-  }
+  const data = (await request.json()) as { currentLogin?: string; login?: string; password?: string; role?: string; objects?: string[]; email?: string };
+  if (!data.login?.trim() || !data.password) return NextResponse.json({ message: "Введите логин и пароль" }, { status: 400 });
   return proxy("addUser", data);
 }
 
 export async function PATCH(request: Request) {
-  const data = (await request.json()) as { id?: string; login?: string; password?: string; role?: string };
-  if (!data.id || !data.login?.trim()) {
-    return NextResponse.json({ message: "Не передан ID пользователя или логин" }, { status: 400 });
-  }
+  const data = (await request.json()) as { currentLogin?: string; id?: string; login?: string; password?: string; role?: string; objects?: string[]; email?: string };
+  if (!data.id || !data.login?.trim()) return NextResponse.json({ message: "Не передан ID пользователя или логин" }, { status: 400 });
   return proxy("updateUser", data);
 }
 
 export async function DELETE(request: Request) {
-  const data = (await request.json()) as { id?: string };
+  const data = (await request.json()) as { currentLogin?: string; id?: string };
   if (!data.id) return NextResponse.json({ message: "Не передан ID пользователя" }, { status: 400 });
   return proxy("deleteUser", data);
 }

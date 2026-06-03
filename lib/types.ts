@@ -1,9 +1,13 @@
-export type UserRole = "customer" | "contractor" | "curator";
+export type UserRole = "customer" | "contractor" | "curator" | "administrator";
 
 export type AppUser = {
   id: string;
   name: string;
   role: UserRole;
+  roleName?: string;
+  objects: string[];
+  email?: string;
+  fullAccess?: boolean;
 };
 
 export type ManagedUser = {
@@ -11,11 +15,15 @@ export type ManagedUser = {
   login: string;
   role: UserRole;
   roleName: string;
+  objects: string[];
+  email?: string;
 };
 
 export type ObjectItem = {
   id: string;
   name: string;
+  fullName?: string;
+  details?: Record<string, string>;
 };
 
 export type SiteItem = {
@@ -27,9 +35,11 @@ export type SiteItem = {
 export type JournalEntry = {
   id: string;
   date: string;
+  login?: string;
   object: string;
   objectId: string;
   site: string;
+  siteId?: string;
   work: string;
   photoUrl: string;
 };
@@ -43,9 +53,11 @@ export type JournalBootstrapData = {
 
 export type JournalPayload = {
   id?: string;
+  login?: string;
   object: string;
   objectId: string;
   site: string;
+  siteId?: string;
   work: string;
   photo?: string;
   fileName?: string;

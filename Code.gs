@@ -1,32 +1,24 @@
+const VERSION = "ProОбъект API v0.4.1";
+
 function doGet(e) {
   try {
     const action = e && e.parameter ? e.parameter.action : "";
-
-    if (action === "getData") {
-      return jsonResponse(getData());
-    }
-
-    return jsonResponse({ status: "OK", message: "ProОбъект API v0.3.0" });
+    if (action === "getData") return jsonResponse(getData({ login: e.parameter.login || "" }));
+    return jsonResponse({ status: "OK", message: VERSION });
   } catch (error) {
-    return jsonResponse({
-      status: "ERROR",
-      message: error && error.message ? error.message : String(error),
-      source: "doGet"
-    });
+    return jsonResponse(errorResponse_(error, "doGet"));
   }
 }
 
 function doPost(e) {
   try {
-    const body = e && e.postData && e.postData.contents
-      ? JSON.parse(e.postData.contents)
-      : {};
-
+    const body = e && e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : {};
     const action = body.action;
     const data = body.data || {};
 
     if (action === "authenticate") return jsonResponse(authenticate(data));
-    if (action === "getUsers") return jsonResponse(getUsers());
+    if (action === "getData") return jsonResponse(getData(data));
+    if (action === "getUsers") return jsonResponse(getUsers(data));
     if (action === "addUser") return jsonResponse(addUser(data));
     if (action === "updateUser") return jsonResponse(updateUser(data));
     if (action === "deleteUser") return jsonResponse(deleteUser(data));
@@ -38,60 +30,220 @@ function doPost(e) {
     if (action === "addSite") return jsonResponse({ status: addSite(data) });
     if (action === "deleteSite") return jsonResponse({ status: deleteSite(data) });
 
-    return jsonResponse({ status: "ERROR", message: "Unknown action" });
+    return jsonResponse({ status: "ERROR", message: "Unknown action: " + action });
   } catch (error) {
-    return jsonResponse({
-      status: "ERROR",
-      message: error && error.message ? error.message : String(error)
-    });
+    return jsonResponse(errorResponse_(error, "doPost"));
   }
 }
 
 function jsonResponse(data) {
-  return ContentService
-    .createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
 }
+
+function errorResponse_(error, source) {
+  return { status: "ERROR", message: error && error.message ? error.message : String(error), source: source || "unknown" };
+}
+
+function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
 
 function getSheetOrCreate_(ss, name, headers) {
   let sheet = ss.getSheetByName(name);
-  if (!sheet) {
-    sheet = ss.insertSheet(name);
-  }
-
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(headers);
-  }
-
-  const existingHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), headers.length)).getValues()[0];
-  let changed = false;
-
-  for (let i = 0; i < headers.length; i++) {
-    if (!existingHeaders[i]) {
-      sheet.getRange(1, i + 1).setValue(headers[i]);
-      changed = true;
-    }
-  }
-
-  if (changed) SpreadsheetApp.flush();
+  if (!sheet) sheet = ss.insertSheet(name);
+  if (sheet.getLastRow() === 0 && headers && headers.length) sheet.appendRow(headers);
   return sheet;
 }
 
+function normalize_(value) { return String(value === null || value === undefined ? "" : value).trim(); }
+function splitList_(value) { return normalize_(value).split(/[;,]/).map(function(v) { return normalize_(v); }).filter(Boolean); }
 
 function normalizeRole_(role) {
-  const value = String(role || "").trim().toLowerCase();
-
+  const value = normalize_(role).toLowerCase();
+  if (value === "administrator" || value === "admin" || value === "администратор") return "administrator";
   if (value === "customer" || value === "заказчик") return "customer";
   if (value === "contractor" || value === "подрядчик") return "contractor";
   if (value === "curator" || value === "куратор") return "curator";
-
-  return "curator";
+  return "customer";
 }
 
 function roleName_(role) {
+  if (role === "administrator") return "Администратор";
   if (role === "customer") return "Заказчик";
   if (role === "contractor") return "Подрядчик";
   return "Куратор";
+}
+
+function userFullAccess_(user) {
+  return user && (user.role === "administrator" || user.objects.indexOf("*") >= 0);
+}
+
+function getUsersSheet_() {
+  const sh = getSheetOrCreate_(ss_(), "USERS", ["login", "password", "role", "objects", "email"]);
+  const headers = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 5)).getValues()[0];
+  const required = ["login", "password", "role", "objects", "email"];
+  for (let i = 0; i < required.length; i++) if (!headers[i]) sh.getRange(1, i + 1).setValue(required[i]);
+  return sh;
+}
+
+function readAllUsers_() {
+  const sh = getUsersSheet_();
+  const rows = sh.getDataRange().getValues().slice(1);
+  return rows.map(function(row, index) {
+    const role = normalizeRole_(row[2]);
+    const objects = splitList_(row[3]);
+    return {
+      id: String(index + 2),
+      login: normalize_(row[0]),
+      password: String(row[1] || ""),
+      role: role,
+      roleName: roleName_(role),
+      objects: objects,
+      email: normalize_(row[4]),
+      fullAccess: role === "administrator" || objects.indexOf("*") >= 0
+    };
+  }).filter(function(u) { return u.login; });
+}
+
+function getUserByLogin_(login) {
+  const target = normalize_(login).toLowerCase();
+  const users = readAllUsers_();
+  for (let i = 0; i < users.length; i++) if (users[i].login.toLowerCase() === target) return users[i];
+  return null;
+}
+
+function authenticate(data) {
+  const login = normalize_(data.login);
+  const password = String(data.password || "");
+  if (!login || !password) return { status: "ERROR", message: "Введите логин и пароль" };
+  const user = getUserByLogin_(login);
+  if (!user || user.password !== password) return { status: "ERROR", message: "Неверный логин или пароль" };
+  return { status: "OK", user: publicUser_(user) };
+}
+
+function publicUser_(user) {
+  return { id: user.login, name: user.login, role: user.role, roleName: user.roleName, objects: user.objects, email: user.email, fullAccess: userFullAccess_(user) };
+}
+
+function canAccessObject_(user, objectId) {
+  if (!user) return false;
+  if (userFullAccess_(user)) return true;
+  return user.objects.indexOf(String(objectId)) >= 0;
+}
+
+function assertObjectAccess_(user, objectId) {
+  if (!canAccessObject_(user, objectId)) throw new Error("Нет доступа к объекту " + objectId);
+}
+
+function assertUserManager_(actor) {
+  if (!actor || (actor.role !== "administrator" && actor.role !== "curator")) throw new Error("Недостаточно прав для управления пользователями");
+}
+
+function normalizeObjectListForActor_(actor, objects) {
+  const list = Array.isArray(objects) ? objects.map(normalize_).filter(Boolean) : splitList_(objects);
+  if (actor.role === "administrator") return list.indexOf("*") >= 0 ? ["*"] : list;
+  const allowed = actor.objects;
+  return list.filter(function(id) { return allowed.indexOf(id) >= 0; });
+}
+
+function getUsers(data) {
+  const actor = getUserByLogin_(data.login || data.currentLogin || "");
+  if (!actor) return { status: "OK", users: [] };
+  const users = readAllUsers_();
+  const visible = userFullAccess_(actor) ? users : users.filter(function(u) {
+    return u.objects.some(function(id) { return actor.objects.indexOf(id) >= 0; });
+  });
+  return { status: "OK", users: visible.map(function(u) { return { id: u.id, login: u.login, role: u.role, roleName: u.roleName, objects: u.objects, email: u.email }; }) };
+}
+
+function addUser(data) {
+  const actor = getUserByLogin_(data.currentLogin || "");
+  assertUserManager_(actor);
+  const login = normalize_(data.login);
+  const password = String(data.password || "");
+  const role = normalizeRole_(data.role);
+  const objects = normalizeObjectListForActor_(actor, data.objects || []);
+  const email = normalize_(data.email);
+  if (!login || !password) throw new Error("Введите логин и пароль");
+  if (!userFullAccess_(actor) && role === "administrator") throw new Error("Куратор не может создавать администратора");
+  if (!userFullAccess_(actor) && objects.length === 0) throw new Error("Выберите хотя бы один доступный объект");
+  const users = readAllUsers_();
+  if (users.some(function(u) { return u.login.toLowerCase() === login.toLowerCase(); })) throw new Error("Пользователь с таким логином уже существует");
+  getUsersSheet_().appendRow([login, password, role, objects.join(","), email]);
+  return { status: "OK" };
+}
+
+function updateUser(data) {
+  const actor = getUserByLogin_(data.currentLogin || "");
+  assertUserManager_(actor);
+  const id = Number(data.id);
+  const login = normalize_(data.login);
+  const password = String(data.password || "");
+  const role = normalizeRole_(data.role);
+  const objects = normalizeObjectListForActor_(actor, data.objects || []);
+  const email = normalize_(data.email);
+  if (!id || id < 2) throw new Error("Не передан ID пользователя");
+  if (!login) throw new Error("Введите логин");
+  if (!userFullAccess_(actor) && role === "administrator") throw new Error("Куратор не может назначать администратора");
+  if (!userFullAccess_(actor) && objects.length === 0) throw new Error("Выберите хотя бы один доступный объект");
+  const sh = getUsersSheet_();
+  if (id > sh.getLastRow()) throw new Error("Пользователь не найден");
+  sh.getRange(id, 1).setValue(login);
+  if (password) sh.getRange(id, 2).setValue(password);
+  sh.getRange(id, 3).setValue(role);
+  sh.getRange(id, 4).setValue(objects.join(","));
+  sh.getRange(id, 5).setValue(email);
+  return { status: "OK" };
+}
+
+function deleteUser(data) {
+  const actor = getUserByLogin_(data.currentLogin || "");
+  assertUserManager_(actor);
+  const id = Number(data.id);
+  if (!id || id < 2) throw new Error("Не передан ID пользователя");
+  const sh = getUsersSheet_();
+  if (id > sh.getLastRow()) throw new Error("Пользователь не найден");
+  sh.deleteRow(id);
+  return { status: "OK" };
+}
+
+function readObjects_() {
+  const sh = getSheetOrCreate_(ss_(), "Objects", ["field"]);
+  const values = sh.getDataRange().getValues();
+  if (values.length === 0 || values[0].length < 2) return [];
+  const ids = values[0].slice(1).map(normalize_);
+  const objects = [];
+  ids.forEach(function(id, idx) {
+    if (!id) return;
+    const details = {};
+    for (let r = 1; r < values.length; r++) {
+      const key = normalize_(values[r][0]);
+      if (key) details[key] = normalize_(values[r][idx + 1]);
+    }
+    const fullName = details.name_obj || details.name || details["Название"] || details["Название объекта"] || id;
+    const shortName = details.short_name || details.shortName || details.name_short || details["Краткое название"] || fullName;
+    objects.push({ id: id, name: shortName, fullName: fullName, details: details });
+  });
+  return objects;
+}
+
+function readAreas_() {
+  const sh = getSheetOrCreate_(ss_(), "Areas", ["field"]);
+  const values = sh.getDataRange().getValues();
+  if (values.length === 0 || values[0].length < 2) return [];
+  const objectIds = values[0].slice(1).map(normalize_);
+  const areas = [];
+  objectIds.forEach(function(objectId, idx) {
+    if (!objectId) return;
+    // Row 1 contains object IDs, row 2 contains object names, row 3+ contains area names.
+    for (let r = 2; r < values.length; r++) {
+      const name = normalize_(values[r][idx + 1]);
+      if (name) areas.push({ id: objectId + "__ar" + (r - 1), name: name, objectId: objectId });
+    }
+  });
+  return areas;
+}
+
+function getLogSheet_() {
+  return getSheetOrCreate_(ss_(), "Log", ["date", "login", "id_obj", "name_obj", "id_ar", "name_ar", "operation", "photo"]);
 }
 
 function safeIsoDate_(value) {
@@ -101,355 +253,186 @@ function safeIsoDate_(value) {
   return date.toISOString();
 }
 
-function normalizeId_(value) {
-  return String(value === null || value === undefined ? "" : value).trim();
-}
-
-function authenticate(data) {
-  const login = String(data.login || "").trim();
-  const password = String(data.password || "");
-
-  if (!login || !password) {
-    return { status: "ERROR", message: "Введите логин и пароль" };
-  }
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const usersSheet = getSheetOrCreate_(ss, "USERS", ["login", "password", "role"]);
-  const rows = usersSheet.getDataRange().getValues().slice(1);
-
-  for (let i = 0; i < rows.length; i++) {
-    const rowLogin = String(rows[i][0] || "").trim();
-    const rowPassword = String(rows[i][1] || "");
-
-    if (rowLogin.toLowerCase() === login.toLowerCase() && rowPassword === password) {
-      const role = normalizeRole_(rows[i][2]);
-      return {
-        status: "OK",
-        user: {
-          id: rowLogin,
-          name: rowLogin,
-          role: role,
-          roleName: roleName_(role)
-        }
-      };
-    }
-  }
-
-  return { status: "ERROR", message: "Неверный логин или пароль" };
-}
-
-
-function getUsers() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const usersSheet = getSheetOrCreate_(ss, "USERS", ["login", "password", "role"]);
-  const rows = usersSheet.getDataRange().getValues().slice(1);
-
-  const users = rows
-    .map(function(row, index) {
-      const login = String(row[0] || "").trim();
-      const role = normalizeRole_(row[2]);
-      return {
-        id: String(index + 2),
-        login: login,
-        role: role,
-        roleName: roleName_(role)
-      };
-    })
-    .filter(function(user) { return user.login !== ""; });
-
-  return { status: "OK", users: users };
-}
-
-function addUser(data) {
-  const login = String(data.login || "").trim();
-  const password = String(data.password || "");
-  const role = normalizeRole_(data.role);
-
-  if (!login || !password) throw new Error("Введите логин и пароль");
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const usersSheet = getSheetOrCreate_(ss, "USERS", ["login", "password", "role"]);
-  const rows = usersSheet.getDataRange().getValues();
-
-  for (let i = 1; i < rows.length; i++) {
-    if (String(rows[i][0] || "").trim().toLowerCase() === login.toLowerCase()) {
-      throw new Error("Пользователь с таким логином уже существует");
-    }
-  }
-
-  usersSheet.appendRow([login, password, role]);
-  return { status: "OK" };
-}
-
-function updateUser(data) {
-  const id = Number(data.id);
-  const login = String(data.login || "").trim();
-  const password = String(data.password || "");
-  const role = normalizeRole_(data.role);
-
-  if (!id || id < 2) throw new Error("Не передан ID пользователя");
-  if (!login) throw new Error("Введите логин");
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const usersSheet = getSheetOrCreate_(ss, "USERS", ["login", "password", "role"]);
-
-  if (id > usersSheet.getLastRow()) throw new Error("Пользователь не найден");
-
-  usersSheet.getRange(id, 1).setValue(login);
-  if (password) usersSheet.getRange(id, 2).setValue(password);
-  usersSheet.getRange(id, 3).setValue(role);
-
-  return { status: "OK" };
-}
-
-function deleteUser(data) {
-  const id = Number(data.id);
-  if (!id || id < 2) throw new Error("Не передан ID пользователя");
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const usersSheet = getSheetOrCreate_(ss, "USERS", ["login", "password", "role"]);
-
-  if (id > usersSheet.getLastRow()) throw new Error("Пользователь не найден");
-  usersSheet.deleteRow(id);
-  return { status: "OK" };
-}
-
-function getData() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  const objectsSheet = getSheetOrCreate_(ss, "Объекты", ["ID", "Название"]);
-  const sitesSheet = getSheetOrCreate_(ss, "Участки", ["ID", "Название", "ObjectID"]);
-  const journalSheet = getSheetOrCreate_(ss, "Журнал", ["Дата", "Объект", "Участок", "Работы", "Фото"]);
-
-  const objectsValues = objectsSheet.getDataRange().getValues();
-  const sitesValues = sitesSheet.getDataRange().getValues();
-  const journalValues = journalSheet.getDataRange().getValues();
-
-  const objects = objectsValues.slice(1)
-    .filter(function(row) { return normalizeId_(row[0]) !== "" && normalizeId_(row[1]) !== ""; })
-    .map(function(row) {
-      return { id: normalizeId_(row[0]), name: normalizeId_(row[1]) };
-    });
-
-  const sites = sitesValues.slice(1)
-    .filter(function(row) { return normalizeId_(row[0]) !== "" && normalizeId_(row[1]) !== ""; })
-    .map(function(row) {
-      return { id: normalizeId_(row[0]), name: normalizeId_(row[1]), objectId: normalizeId_(row[2]) };
-    });
-
-  const journal = journalValues.slice(1).map(function(row, index) {
-    const rowNumber = index + 2;
-    const objectName = normalizeId_(row[1]);
-    const matchedObject = objects.find(function(item) { return item.name === objectName; });
-
+function readLog_(objectsById) {
+  const sh = getLogSheet_();
+  const values = sh.getDataRange().getValues();
+  return values.slice(1).map(function(row, index) {
+    const objectId = normalize_(row[2]);
     return {
-      id: String(rowNumber),
+      id: String(index + 2),
       date: safeIsoDate_(row[0]),
-      objectId: matchedObject ? matchedObject.id : "",
-      object: objectName,
-      site: normalizeId_(row[2]),
-      work: String(row[3] || ""),
-      photoUrl: String(row[4] || "")
+      login: normalize_(row[1]),
+      objectId: objectId,
+      object: normalize_(row[3]) || (objectsById[objectId] ? objectsById[objectId].name : objectId),
+      siteId: normalize_(row[4]),
+      site: normalize_(row[5]),
+      work: String(row[6] || ""),
+      photoUrl: String(row[7] || "")
     };
-  }).filter(function(item) {
-    return item.object || item.site || item.work || item.photoUrl;
-  }).reverse();
+  }).filter(function(item) { return item.objectId || item.work; }).reverse();
+}
 
-  const usersResult = getUsers();
-
-  return {
-    status: "OK",
-    objects: objects,
-    sites: sites,
-    journal: journal,
-    users: usersResult.users || []
-  };
+function getData(data) {
+  const actor = getUserByLogin_(data.login || "");
+  if (!actor) return { status: "OK", objects: [], sites: [], journal: [], users: [] };
+  const allObjects = readObjects_();
+  const allowedObjects = userFullAccess_(actor) ? allObjects : allObjects.filter(function(o) { return canAccessObject_(actor, o.id); });
+  const allowedIds = allowedObjects.map(function(o) { return o.id; });
+  const objectsById = {};
+  allObjects.forEach(function(o) { objectsById[o.id] = o; });
+  const sites = readAreas_().filter(function(s) { return allowedIds.indexOf(s.objectId) >= 0; });
+  const journal = readLog_(objectsById).filter(function(entry) { return allowedIds.indexOf(entry.objectId) >= 0; });
+  return { status: "OK", objects: allowedObjects, sites: sites, journal: journal, users: getUsers({ login: actor.login }).users || [] };
 }
 
 function createPhoto_(data) {
   if (!data.photo) return { url: "", fileId: "" };
-
-  const mimeType = data.fileMimeType || MimeType.JPEG;
-  const blob = Utilities.newBlob(
-    Utilities.base64Decode(data.photo),
-    mimeType,
-    data.fileName || "photo.jpg"
-  );
-
+  const blob = Utilities.newBlob(Utilities.base64Decode(data.photo), data.fileMimeType || MimeType.JPEG, data.fileName || "photo.jpg");
   const file = DriveApp.getRootFolder().createFile(blob);
   return { url: file.getUrl(), fileId: file.getId() };
 }
 
 function saveData(data) {
-  if (!data.object || !data.objectId || !data.site || !data.work) {
-    throw new Error("Не заполнены обязательные поля");
-  }
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const journal = getSheetOrCreate_(ss, "Журнал", ["Дата", "Объект", "Участок", "Работы", "Фото"]);
+  const actor = getUserByLogin_(data.login || "");
+  if (!actor) throw new Error("Пользователь не найден");
+  if (actor.role !== "administrator" && actor.role !== "curator" && actor.role !== "contractor") throw new Error("Нет прав на создание записи");
+  if (!data.objectId || !data.site || !data.work) throw new Error("Не заполнены обязательные поля");
+  assertObjectAccess_(actor, data.objectId);
+  const objectsById = {};
+  readObjects_().forEach(function(o) { objectsById[o.id] = o; });
+  const objectName = normalize_(data.object) || (objectsById[data.objectId] ? objectsById[data.objectId].name : data.objectId);
   const photo = createPhoto_(data);
-
-  journal.appendRow([
-    new Date(),
-    data.object,
-    data.site,
-    data.work,
-    photo.url
-  ]);
-
-  sendNotification_(data.object, data.site, data.work, photo.url);
+  getLogSheet_().appendRow([new Date(), actor.login, data.objectId, objectName, data.siteId || "", data.site, data.work, photo.url]);
+  sendNewEntryNotification_(data.objectId, objectName, data.site, data.work, photo.url, actor.login);
   return "OK";
 }
 
 function updateJournalEntry(data) {
-  if (!data.id || !data.work) throw new Error("Не передан ID записи или текст работ");
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const journal = getSheetOrCreate_(ss, "Журнал", ["Дата", "Объект", "Участок", "Работы", "Фото"]);
+  const actor = getUserByLogin_(data.login || "");
+  if (!actor) throw new Error("Пользователь не найден");
+  if (actor.role !== "administrator" && actor.role !== "curator") throw new Error("Нет прав на редактирование записи");
   const row = Number(data.id);
-
-  if (row < 2 || row > journal.getLastRow()) throw new Error("Запись не найдена");
-
-  let photoUrl = String(journal.getRange(row, 5).getValue() || "");
-
-  if (data.photo) {
-    const photo = createPhoto_(data);
-    photoUrl = photo.url;
-  }
-
-  journal.getRange(row, 2, 1, 4).setValues([[
-    data.object || journal.getRange(row, 2).getValue(),
-    data.site || journal.getRange(row, 3).getValue(),
-    data.work,
-    photoUrl
-  ]]);
-
+  const sh = getLogSheet_();
+  if (row < 2 || row > sh.getLastRow()) throw new Error("Запись не найдена");
+  const existingObjectId = normalize_(sh.getRange(row, 3).getValue());
+  assertObjectAccess_(actor, existingObjectId);
+  let photoUrl = String(sh.getRange(row, 8).getValue() || "");
+  if (data.photo) photoUrl = createPhoto_(data).url;
+  sh.getRange(row, 6, 1, 3).setValues([[data.site || sh.getRange(row, 6).getValue(), data.work, photoUrl]]);
   return "OK";
 }
 
 function deleteJournalEntry(data) {
-  if (!data.id) throw new Error("Не передан ID записи");
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const journal = getSheetOrCreate_(ss, "Журнал", ["Дата", "Объект", "Участок", "Работы", "Фото"]);
+  const actor = getUserByLogin_(data.login || "");
+  if (!actor) throw new Error("Пользователь не найден");
+  if (actor.role !== "administrator" && actor.role !== "curator") throw new Error("Нет прав на удаление записи");
   const row = Number(data.id);
-
-  if (row < 2 || row > journal.getLastRow()) throw new Error("Запись не найдена");
-
-  journal.deleteRow(row);
+  const sh = getLogSheet_();
+  if (row < 2 || row > sh.getLastRow()) throw new Error("Запись не найдена");
+  const objectId = normalize_(sh.getRange(row, 3).getValue());
+  assertObjectAccess_(actor, objectId);
+  sh.deleteRow(row);
   return "OK";
 }
 
-function addObject(data) {
-  if (!data.name) throw new Error("Введите название объекта");
+function findObjectColumn_(objectId, sheetName) {
+  const sh = ss_().getSheetByName(sheetName);
+  if (!sh) return -1;
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(normalize_);
+  return headers.indexOf(objectId) + 1;
+}
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = getSheetOrCreate_(ss, "Объекты", ["ID", "Название"]);
-  const id = "obj_" + new Date().getTime();
-  sheet.appendRow([id, data.name]);
+function addObject(data) {
+  const actor = getUserByLogin_(data.login || "");
+  if (!actor || actor.role !== "administrator") throw new Error("Только администратор может добавлять объекты");
+  const name = normalize_(data.name);
+  if (!name) throw new Error("Введите название объекта");
+  const id = "id" + new Date().getTime();
+  const sh = getSheetOrCreate_(ss_(), "Objects", ["field"]);
+  const col = sh.getLastColumn() + 1;
+  sh.getRange(1, col).setValue(id);
+  if (sh.getLastRow() < 2) sh.getRange(2, 1).setValue("name_obj");
+  sh.getRange(2, col).setValue(name);
+  const areas = getSheetOrCreate_(ss_(), "Areas", ["field"]);
+  areas.getRange(1, areas.getLastColumn() + 1).setValue(id);
   return "OK";
 }
 
 function deleteObject(data) {
-  if (!data.id) throw new Error("Не передан ID объекта");
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = getSheetOrCreate_(ss, "Объекты", ["ID", "Название"]);
-  const values = sheet.getDataRange().getValues();
-
-  for (let i = values.length - 1; i >= 1; i--) {
-    if (String(values[i][0]) === String(data.id)) {
-      sheet.deleteRow(i + 1);
-    }
-  }
-
+  const actor = getUserByLogin_(data.login || "");
+  if (!actor || actor.role !== "administrator") throw new Error("Только администратор может удалять объекты");
+  const objectId = normalize_(data.id);
+  const colObj = findObjectColumn_(objectId, "Objects");
+  if (colObj > 1) ss_().getSheetByName("Objects").deleteColumn(colObj);
+  const colArea = findObjectColumn_(objectId, "Areas");
+  if (colArea > 1) ss_().getSheetByName("Areas").deleteColumn(colArea);
   return "OK";
 }
 
 function addSite(data) {
-  if (!data.name || !data.objectId) throw new Error("Введите участок и выберите объект");
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = getSheetOrCreate_(ss, "Участки", ["ID", "Название", "ObjectID"]);
-  const id = "site_" + new Date().getTime();
-  sheet.appendRow([id, data.name, data.objectId]);
+  const actor = getUserByLogin_(data.login || "");
+  if (!actor || (actor.role !== "administrator" && actor.role !== "curator")) throw new Error("Недостаточно прав");
+  assertObjectAccess_(actor, data.objectId);
+  const name = normalize_(data.name);
+  if (!name) throw new Error("Введите участок");
+  const sh = getSheetOrCreate_(ss_(), "Areas", ["field"]);
+  let col = findObjectColumn_(data.objectId, "Areas");
+  if (col < 2) { col = sh.getLastColumn() + 1; sh.getRange(1, col).setValue(data.objectId); }
+  const values = sh.getRange(1, col, sh.getMaxRows(), 1).getValues();
+  let row = 2;
+  while (values[row - 1] && normalize_(values[row - 1][0])) row++;
+  sh.getRange(row, col).setValue(name);
   return "OK";
 }
 
 function deleteSite(data) {
-  if (!data.id) throw new Error("Не передан ID участка");
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = getSheetOrCreate_(ss, "Участки", ["ID", "Название", "ObjectID"]);
-  const values = sheet.getDataRange().getValues();
-
-  for (let i = values.length - 1; i >= 1; i--) {
-    if (String(values[i][0]) === String(data.id)) {
-      sheet.deleteRow(i + 1);
-    }
-  }
-
+  const actor = getUserByLogin_(data.login || "");
+  if (!actor || (actor.role !== "administrator" && actor.role !== "curator")) throw new Error("Недостаточно прав");
+  const parts = String(data.id || "").split("__ar");
+  if (parts.length !== 2) throw new Error("Некорректный ID участка");
+  const objectId = parts[0];
+  const row = Number(parts[1]) + 1;
+  assertObjectAccess_(actor, objectId);
+  const col = findObjectColumn_(objectId, "Areas");
+  if (col > 1 && row > 1) ss_().getSheetByName("Areas").getRange(row, col).clearContent();
   return "OK";
 }
 
-function sendNotification_(objectName, siteName, workText, photoUrl) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const mainSheet = ss.getSheetByName("Главная");
-  if (!mainSheet) return;
+function recipientsForObject_(objectId) {
+  const emails = {};
+  readAllUsers_().forEach(function(user) {
+    if (user.email && canAccessObject_(user, objectId)) emails[user.email] = true;
+  });
+  return Object.keys(emails);
+}
 
-  const emailsData = mainSheet.getDataRange().getValues();
-  const emails = [];
+function sendSystemEmail_(to, subject, body) {
+  if (!to || to.length === 0) return;
+  MailApp.sendEmail({ to: to.join(","), subject: subject, body: body, name: "ProObject" });
+}
 
-  for (let i = 1; i < emailsData.length; i++) {
-    if (emailsData[i][1]) emails.push(emailsData[i][1]);
-  }
-
-  if (emails.length === 0) return;
-
-  const body =
-    "Объект: " + objectName + "\n\n" +
+function sendNewEntryNotification_(objectId, objectName, siteName, workText, photoUrl, login) {
+  const recipients = recipientsForObject_(objectId);
+  const body = "Объект: " + objectName + "\n\n" +
     "Участок: " + siteName + "\n\n" +
+    "Пользователь: " + login + "\n\n" +
     "Работы:\n" + workText + "\n\n" +
     "Фото:\n" + (photoUrl || "Нет фото");
-
-  MailApp.sendEmail(emails.join(","), "Новая запись в журнале работ", body);
+  sendSystemEmail_(recipients, "Новая запись в журнале — ProObject", body);
 }
 
 function checkJournalToday() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const journal = ss.getSheetByName("Журнал");
-  const mainSheet = ss.getSheetByName("Главная");
-  if (!journal || !mainSheet) return;
-
-  const data = journal.getDataRange().getValues();
+  const objects = readObjects_();
+  const log = readLog_({});
   const today = new Date();
-  let hasToday = false;
-
-  for (let i = 1; i < data.length; i++) {
-    const rowDate = new Date(data[i][0]);
-    if (
-      rowDate.getDate() === today.getDate() &&
-      rowDate.getMonth() === today.getMonth() &&
-      rowDate.getFullYear() === today.getFullYear()
-    ) {
-      hasToday = true;
-      break;
+  objects.forEach(function(object) {
+    const hasToday = log.some(function(entry) {
+      if (entry.objectId !== object.id) return false;
+      const d = new Date(entry.date);
+      return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+    });
+    if (!hasToday) {
+      sendSystemEmail_(recipientsForObject_(object.id), "Журнал работ не заполнен — ProObject", "По объекту «" + object.name + "» сегодня отсутствуют записи в журнале работ.");
     }
-  }
-
-  if (hasToday) return;
-
-  const emailsData = mainSheet.getDataRange().getValues();
-  const emails = [];
-  for (let i = 1; i < emailsData.length; i++) {
-    if (emailsData[i][1]) emails.push(emailsData[i][1]);
-  }
-
-  if (emails.length > 0) {
-    MailApp.sendEmail(
-      emails.join(","),
-      "Журнал работ не заполнен",
-      "Сегодня до 18:00 не было внесено ни одной записи."
-    );
-  }
+  });
 }

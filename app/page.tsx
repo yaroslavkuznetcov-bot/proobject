@@ -5,6 +5,7 @@ import type { AppUser, JournalBootstrapData, JournalEntry, JournalPayload, Manag
 
 const CUSTOM_SITE_VALUE = "__custom__";
 const MAX_PHOTO_SIZE_MB = 8;
+const ALL_OBJECTS_VALUE = "__all_objects__";
 
 type SubmitState = "idle" | "loading" | "success" | "error";
 type Theme = "light" | "dark";
@@ -12,15 +13,57 @@ type Theme = "light" | "dark";
 const roleLabel: Record<UserRole, string> = {
   customer: "Заказчик",
   contractor: "Подрядчик",
-  curator: "Куратор"
+  curator: "Куратор",
+  administrator: "Администратор"
 };
 
+const objectCardSections = [
+  {
+    title: "Объект",
+    fields: [
+      ["name_obj", "Полное название объекта"]
+    ]
+  },
+  {
+    title: "Информация о Заказчике",
+    fields: [
+      ["name_customer", "Заказчик"],
+      ["OGRN_customer", "ОГРН Заказчика"],
+      ["INN_customer", "ИНН Заказчика"],
+      ["adress_customer", "Адрес Заказчика"]
+    ]
+  },
+  {
+    title: "Информация о Подрядчике",
+    fields: [
+      ["name_contractor", "Подрядчик"],
+      ["OGRN_contractor", "ОГРН Подрядчика"],
+      ["INN_contractor", "ИНН Подрядчика"],
+      ["adress_contractor", "Адрес Подрядчика"]
+    ]
+  },
+  {
+    title: "Информация о Проектировщике",
+    fields: [
+      ["name_projector", "Проектировщик"],
+      ["OGRN_projector", "ОГРН Проектировщика"],
+      ["INN_projector", "ИНН Проектировщика"],
+      ["adress_projector", "Адрес Проектировщика"],
+      ["SRO_projector", "СРО Проектировщика"]
+    ]
+  }
+] as const;
+
+function detailValue(details: Record<string, string> | undefined, key: string) {
+  return details?.[key]?.trim() || "";
+}
+
 function canWrite(role?: UserRole) {
-  return role === "contractor" || role === "curator";
+  return role === "contractor" || role === "curator" || role === "administrator";
 }
 
 function canManage(role?: UserRole) {
-  return role === "curator";
+  return role === "curator" || role === "administrator";
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -48,6 +91,51 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+function formatDateForExport(value: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function escapeHtml(value: string | number | undefined) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function safeFilePart(value: string) {
+  return value
+    .trim()
+    .replace(/[\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, "_")
+    .slice(0, 80) || "journal";
+}
+
+function downloadHtmlExcel(fileName: string, rows: string[][]) {
+  const htmlRows = rows
+    .map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`)
+    .join("");
+  const html = `<!doctype html><html><head><meta charset="utf-8" /></head><body><table border="1">${htmlRows}</table></body></html>`;
+  const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName.endsWith(".xls") ? fileName : `${fileName}.xls`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 export default function HomePage() {
   const [user, setUser] = useState<AppUser | null>(null);
   const [login, setLogin] = useState("");
@@ -71,7 +159,11 @@ export default function HomePage() {
   const [newUserLogin, setNewUserLogin] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserRole, setNewUserRole] = useState<UserRole>("contractor");
+  const [newUserObjects, setNewUserObjects] = useState<string[]>([]);
+  const [newUserEmail, setNewUserEmail] = useState("");
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
+  const [showDownloadOptions, setShowDownloadOptions] = useState(false);
+  const [downloadObjectId, setDownloadObjectId] = useState(ALL_OBJECTS_VALUE);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -96,7 +188,7 @@ export default function HomePage() {
     setState("loading");
     setMessage("Загружаем данные…");
     try {
-      const response = await fetch("/api/data", { cache: "no-store" });
+      const response = await fetch(`/api/data?login=${encodeURIComponent(user?.id || "")}`, { cache: "no-store" });
       const json = await response.json();
       if (!response.ok) throw new Error(json.message || "Не удалось загрузить данные");
       setBootstrap(json);
@@ -143,6 +235,75 @@ export default function HomePage() {
       return objectMatch && siteMatch && textMatch;
     });
   }, [bootstrap.journal, objectId, query, selectedObject?.name, selectedSite?.name, siteId]);
+
+  function exportJournal(objectIds: string[], fileLabel: string) {
+    const allowed = new Set(objectIds);
+    const rows = bootstrap.journal
+      .filter((entry) => allowed.has(entry.objectId))
+      .slice()
+      .reverse();
+
+    if (rows.length === 0) {
+      setState("error");
+      setMessage("По выбранному объекту нет записей для выгрузки");
+      return;
+    }
+
+    const tableRows = [
+      ["Дата", "Пользователь", "ID объекта", "Объект", "ID участка", "Участок", "Работы", "Фото"],
+      ...rows.map((entry) => [
+        formatDateForExport(entry.date),
+        entry.login || "",
+        entry.objectId || "",
+        entry.object || "",
+        entry.siteId || "",
+        entry.site || "",
+        entry.work || "",
+        entry.photoUrl || ""
+      ])
+    ];
+
+    const stamp = new Intl.DateTimeFormat("ru-RU", { year: "numeric", month: "2-digit", day: "2-digit" })
+      .format(new Date())
+      .replace(/\./g, "-");
+    downloadHtmlExcel(`ProObject_${safeFilePart(fileLabel)}_${stamp}.xls`, tableRows);
+    setState("success");
+    setMessage("Журнал подготовлен к скачиванию");
+  }
+
+  function handleDownloadClick() {
+    if (user?.role === "administrator") {
+      setDownloadObjectId(objectId || ALL_OBJECTS_VALUE);
+      setShowDownloadOptions((current) => !current);
+      return;
+    }
+
+    if (!selectedObject) {
+      setState("error");
+      setMessage("Выберите объект для скачивания журнала");
+      return;
+    }
+
+    exportJournal([selectedObject.id], selectedObject.name);
+  }
+
+  function handleAdminDownload() {
+    if (downloadObjectId === ALL_OBJECTS_VALUE) {
+      exportJournal(bootstrap.objects.map((item) => item.id), "Все_объекты");
+      setShowDownloadOptions(false);
+      return;
+    }
+
+    const object = bootstrap.objects.find((item) => item.id === downloadObjectId);
+    if (!object) {
+      setState("error");
+      setMessage("Выберите объект для скачивания журнала");
+      return;
+    }
+
+    exportJournal([object.id], object.name);
+    setShowDownloadOptions(false);
+  }
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -197,9 +358,11 @@ export default function HomePage() {
     try {
       const payload: JournalPayload = {
         id: editing?.id,
+        login: user.id,
         object: selectedObject.name,
         objectId: selectedObject.id,
         site: siteName,
+        siteId: selectedSite?.id,
         work: work.trim()
       };
       if (photo) {
@@ -241,7 +404,7 @@ export default function HomePage() {
     const response = await fetch("/api/journal", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id })
+      body: JSON.stringify({ id, login: user?.id })
     });
     const json = await response.json();
     if (!response.ok || json.status === "ERROR") setMessage(json.message || "Не удалось удалить запись");
@@ -250,27 +413,27 @@ export default function HomePage() {
 
   async function createObject() {
     if (!newObject.trim()) return;
-    await fetch("/api/objects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newObject.trim() }) });
+    await fetch("/api/objects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newObject.trim(), login: user?.id }) });
     setNewObject("");
     await loadData();
   }
 
   async function deleteObject(id: string) {
     if (!confirm("Удалить объект? Участки и старые записи останутся в таблице.")) return;
-    await fetch("/api/objects", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+    await fetch("/api/objects", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, login: user?.id }) });
     await loadData();
   }
 
   async function createSite() {
     if (!newSite.trim() || !objectId) return;
-    await fetch("/api/sites", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newSite.trim(), objectId }) });
+    await fetch("/api/sites", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newSite.trim(), objectId, login: user?.id }) });
     setNewSite("");
     await loadData();
   }
 
   async function deleteSite(id: string) {
     if (!confirm("Удалить участок из справочника?")) return;
-    await fetch("/api/sites", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+    await fetch("/api/sites", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, login: user?.id }) });
     await loadData();
   }
 
@@ -278,6 +441,8 @@ export default function HomePage() {
     setNewUserLogin("");
     setNewUserPassword("");
     setNewUserRole("contractor");
+    setNewUserObjects([]);
+    setNewUserEmail("");
     setEditingUser(null);
   }
 
@@ -286,6 +451,8 @@ export default function HomePage() {
     setNewUserLogin(item.login);
     setNewUserPassword("");
     setNewUserRole(item.role);
+    setNewUserObjects(item.objects || []);
+    setNewUserEmail(item.email || "");
   }
 
   async function saveUser() {
@@ -296,10 +463,13 @@ export default function HomePage() {
       method: editingUser ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        currentLogin: user?.id,
         id: editingUser?.id,
         login: newUserLogin.trim(),
         password: newUserPassword,
-        role: newUserRole
+        role: newUserRole,
+        objects: newUserRole === "administrator" ? ["*"] : newUserObjects,
+        email: newUserEmail.trim()
       })
     });
     const json = await response.json();
@@ -322,7 +492,7 @@ export default function HomePage() {
     const response = await fetch("/api/users", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id })
+      body: JSON.stringify({ id, login: user?.id })
     });
     const json = await response.json();
     if (!response.ok || json.status === "ERROR") setMessage(json.message || "Не удалось удалить пользователя");
@@ -333,7 +503,7 @@ export default function HomePage() {
     return (
       <main className="page authPage">
         <section className="loginCard">
-          <div className="brandLine"><h1>ProОбъект</h1><span className="versionBadge">v0.3.1</span></div>
+          <div className="brandLine"><h1>ProОбъект</h1><span className="versionBadge">v0.4.2</span></div>
           <p className="heroSubtitle">система автоматизированного сбора информации</p>
           <form className="form" onSubmit={handleLogin}>
             <div className="fieldGroup">
@@ -370,7 +540,7 @@ export default function HomePage() {
       <div className="shell">
         <section className="heroCard">
           <div>
-            <div className="brandLine"><h1>ProОбъект</h1><span className="versionBadge">v0.3.1</span></div>
+            <div className="brandLine"><h1>ProОбъект</h1><span className="versionBadge">v0.4.2</span></div>
             <p className="heroSubtitle">система автоматизированного сбора информации</p>
             <p className="heroText">Вы вошли как <b>{roleLabel[user.role]}</b></p>
           </div>
@@ -390,8 +560,24 @@ export default function HomePage() {
                   <h2>Общий журнал работ</h2>
                   <p>{writable ? "Заполните запись или просмотрите историю." : "Доступен просмотр истории и фото."}</p>
                 </div>
-                <div className={`statusPill ${state === "success" ? "ready" : ""}`}>{editing ? "Редактирование" : state === "success" ? "Готово" : "Запись"}</div>
+                <div className="journalHeaderActions">
+                  <div className={`statusPill ${state === "success" ? "ready" : ""}`}>{editing ? "Редактирование" : state === "success" ? "Готово" : "Запись"}</div>
+                  <button className="downloadButton" type="button" onClick={handleDownloadClick}>Скачать</button>
+                </div>
               </div>
+
+              {showDownloadOptions && user.role === "administrator" ? (
+                <div className="downloadPanel">
+                  <div className="fieldGroup">
+                    <label htmlFor="downloadObject">Журнал для скачивания</label>
+                    <select id="downloadObject" className="field" value={downloadObjectId} onChange={(event) => setDownloadObjectId(event.target.value)}>
+                      <option value={ALL_OBJECTS_VALUE}>Все объекты</option>
+                      {bootstrap.objects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </select>
+                  </div>
+                  <button className="primaryButton" type="button" onClick={handleAdminDownload}>Скачать Excel</button>
+                </div>
+              ) : null}
 
               <form className="form" onSubmit={saveJournal}>
                 <div className="twoCols">
@@ -473,13 +659,38 @@ export default function HomePage() {
           </div>
 
           <aside className="sideStack">
+            {selectedObject?.details ? (
+              <details className="sideCard objectDetailsPanel">
+                <summary className="objectSummary">Карточка объекта</summary>
+                <div className="objectInfo">
+                  {objectCardSections.map((section) => {
+                    const visibleFields = section.fields
+                      .map(([key, label]) => ({ key, label, value: detailValue(selectedObject.details, key) }))
+                      .filter((field) => field.value);
+
+                    if (visibleFields.length === 0) return null;
+
+                    return (
+                      <section className="objectInfoSection" key={section.title}>
+                        <h4>{section.title}</h4>
+                        {visibleFields.map((field) => (
+                          <div key={field.key}><span>{field.label}</span><b>{field.value}</b></div>
+                        ))}
+                      </section>
+                    );
+                  })}
+                </div>
+              </details>
+            ) : null}
+
             {manageable ? (
               <div className="sideCard">
                 <h3>Роль: {roleLabel[user.role]}</h3>
                 <ul className="checkList">
                   <li>Заказчик: просмотр истории и фото</li>
                   <li>Подрядчик: добавление записей и фото</li>
-                  <li>Куратор: полное управление</li>
+                  <li>Куратор: управление назначенными объектами</li>
+                  <li>Администратор: полный доступ ко всем объектам</li>
                 </ul>
               </div>
             ) : null}
@@ -495,7 +706,24 @@ export default function HomePage() {
                     <option value="customer">Заказчик</option>
                     <option value="contractor">Подрядчик</option>
                     <option value="curator">Куратор</option>
+                    <option value="administrator">Администратор</option>
                   </select>
+                  <input className="field" value={newUserEmail} onChange={(event) => setNewUserEmail(event.target.value)} placeholder="Email для уведомлений" />
+                  {newUserRole !== "administrator" ? (
+                    <div className="accessBox">
+                      <label>Доступные объекты</label>
+                      {bootstrap.objects.map((obj) => (
+                        <label key={obj.id} className="checkRow">
+                          <input
+                            type="checkbox"
+                            checked={newUserObjects.includes(obj.id)}
+                            onChange={(event) => setNewUserObjects((current) => event.target.checked ? [...current, obj.id] : current.filter((id) => id !== obj.id))}
+                          />
+                          <span>{obj.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : null}
                   <div className="buttonRow tight">
                     <button className="primaryButton" type="button" onClick={saveUser}>{editingUser ? "Сохранить" : "Добавить"}</button>
                     {editingUser ? <button className="ghostButton" type="button" onClick={resetUserForm}>Отменить</button> : null}
@@ -506,7 +734,7 @@ export default function HomePage() {
                     <div key={item.id} className="userRow">
                       <div>
                         <b>{item.login}</b>
-                        <span>{item.roleName}</span>
+                        <span>{item.roleName}{item.email ? ` · ${item.email}` : ""}</span><span>{item.objects?.includes("*") ? "Все объекты" : (item.objects || []).join(", ")}</span>
                       </div>
                       <div className="miniActions">
                         <button type="button" onClick={() => startUserEdit(item)}>Править</button>

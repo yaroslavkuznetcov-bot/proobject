@@ -99,6 +99,10 @@ h1 { margin: 0; font-size: clamp(34px, 5vw, 56px); letter-spacing: -.055em; line
 .cardTitle p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
 .statusPill { white-space: nowrap; padding: 8px 11px; border-radius: 999px; font-size: 12px; font-weight: 900; background: rgba(148,163,184,.18); color: var(--muted); }
 .statusPill.ready { background: rgba(21,128,61,.14); color: var(--success); }
+.journalHeaderActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.downloadButton { border: 1px solid var(--line); border-radius: 999px; min-height: 34px; padding: 0 12px; background: rgba(37,99,235,.12); color: var(--accent); font-size: 12px; font-weight: 950; }
+.downloadPanel { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: end; margin: -6px 0 18px; padding: 14px; border: 1px solid var(--line); border-radius: 20px; background: rgba(148,163,184,.08); }
+.downloadPanel .primaryButton { width: auto; min-width: 160px; }
 .form { display: grid; gap: 16px; }
 .twoCols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .fieldGroup { display: grid; gap: 8px; }
@@ -149,7 +153,9 @@ html[data-theme="dark"] .primaryButton { background: linear-gradient(135deg, #e5
   .formCard, .sideCard, .loginCard { border-radius: 26px; padding: 18px; }
   .cardTitle { flex-direction: column; align-items: stretch; }
   .journalHead { align-items: flex-start; }
-  .topActions, .buttonRow { width: 100%; }
+  .topActions, .buttonRow, .journalHeaderActions { width: 100%; }
+  .downloadPanel { grid-template-columns: 1fr; }
+  .downloadPanel .primaryButton { width: 100%; }
   .topActions button, .buttonRow button { flex: 1; }
 }
 .buttonRow.tight { gap: 8px; }
@@ -159,3 +165,20 @@ html[data-theme="dark"] .primaryButton { background: linear-gradient(135deg, #e5
 .userRow b { display: block; font-size: 14px; overflow-wrap: anywhere; }
 .userRow span { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .userRow button:disabled { opacity: .45; cursor: not-allowed; }
+.accessBox { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 18px; background: rgba(148,163,184,.08); }
+.checkRow { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--muted); }
+.checkRow input { width: 18px; height: 18px; }
+.objectInfo { display: grid; gap: 8px; margin-top: 12px; }
+.objectInfo div { display: grid; gap: 3px; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-solid); }
+.objectInfo span { color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.objectInfo b { font-size: 13px; overflow-wrap: anywhere; }
+
+.objectDetailsPanel { padding: 0; overflow: hidden; }
+.objectSummary { list-style: none; padding: 20px 24px; font-weight: 950; letter-spacing: -.035em; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+.objectSummary::-webkit-details-marker { display: none; }
+.objectSummary::after { content: "Раскрыть"; font-size: 12px; font-weight: 900; color: var(--accent); padding: 6px 9px; border-radius: 999px; background: rgba(37,99,235,.12); }
+.objectDetailsPanel[open] .objectSummary::after { content: "Свернуть"; }
+.objectDetailsPanel .objectInfo { padding: 0 24px 24px; margin-top: 0; }
+.objectInfoSection { display: grid; gap: 8px; }
+.objectInfoSection + .objectInfoSection { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.objectInfoSection h4 { margin: 0 0 2px; font-size: 14px; letter-spacing: -.02em; }
