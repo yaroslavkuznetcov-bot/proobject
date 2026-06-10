@@ -503,7 +503,7 @@ export default function HomePage() {
     return (
       <main className="page authPage">
         <section className="loginCard">
-          <div className="brandLine"><h1>ProОбъект</h1><span className="versionBadge">v0.4.2</span></div>
+          <div className="brandLine"><h1>ProОбъект</h1><span className="versionBadge">v0.5.5</span></div>
           <p className="heroSubtitle">система автоматизированного сбора информации</p>
           <form className="form" onSubmit={handleLogin}>
             <div className="fieldGroup">
@@ -540,7 +540,7 @@ export default function HomePage() {
       <div className="shell">
         <section className="heroCard">
           <div>
-            <div className="brandLine"><h1>ProОбъект</h1><span className="versionBadge">v0.4.2</span></div>
+            <div className="brandLine"><h1>ProОбъект</h1><span className="versionBadge">v0.5.5</span></div>
             <p className="heroSubtitle">система автоматизированного сбора информации</p>
             <p className="heroText">Вы вошли как <b>{roleLabel[user.role]}</b></p>
           </div>
