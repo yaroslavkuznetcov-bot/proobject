@@ -638,11 +638,13 @@ export default function HomePage() {
                 {visibleJournal.length === 0 ? <div className="empty">Записей пока нет</div> : null}
                 {visibleJournal.map((entry) => {
                   const hideObjectInCustomerView = user.role === "customer" && Boolean(objectId);
+                  const entryObject = bootstrap.objects.find((item) => item.id === entry.objectId);
+                  const objectTitle = entryObject?.name || entry.object;
                   return (
                     <article className="journalItem" key={entry.id}>
                       <div className="journalHead">
                         <div className="journalMeta">
-                          {hideObjectInCustomerView ? null : <strong>{entry.object}</strong>}
+                          {hideObjectInCustomerView ? null : <strong>{objectTitle}</strong>}
                           <span>{entry.site} · {formatDate(entry.date)}</span>
                         </div>
                         <div className="journalActions">
