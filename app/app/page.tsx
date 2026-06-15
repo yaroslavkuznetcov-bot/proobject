@@ -2,13 +2,16 @@
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import type { AppUser, JournalBootstrapData, JournalEntry, JournalPayload, ManagedUser, UserRole } from "@/lib/types";
+import MapObjectModule from "./MapObjectModule";
 
 const CUSTOM_SITE_VALUE = "__custom__";
 const MAX_PHOTO_SIZE_MB = 8;
 const ALL_OBJECTS_VALUE = "__all_objects__";
+const APP_VERSION = "v0.6.9";
 
 type SubmitState = "idle" | "loading" | "success" | "error";
 type Theme = "light" | "dark";
+type WorkModule = "journal" | "map";
 
 const roleLabel: Record<UserRole, string> = {
   customer: "Заказчик",
@@ -141,7 +144,7 @@ export default function HomePage() {
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [authMessage, setAuthMessage] = useState("");
-  const [theme, setTheme] = useState<Theme>("light");
+  const [theme, setTheme] = useState<Theme>("dark");
 
   const [bootstrap, setBootstrap] = useState<JournalBootstrapData>({ objects: [], sites: [], journal: [] });
   const [objectId, setObjectId] = useState("");
@@ -164,6 +167,7 @@ export default function HomePage() {
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
   const [showDownloadOptions, setShowDownloadOptions] = useState(false);
   const [downloadObjectId, setDownloadObjectId] = useState(ALL_OBJECTS_VALUE);
+  const [activeModule, setActiveModule] = useState<WorkModule>("journal");
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -503,7 +507,7 @@ export default function HomePage() {
     return (
       <main className="page authPage">
         <section className="loginCard">
-          <div className="brandLine"><h1>ProОбъект</h1><span className="versionBadge">v0.5.5</span></div>
+          <div className="brandLine"><h1>ProОбъект</h1><span className="versionBadge">{APP_VERSION}</span></div>
           <p className="heroSubtitle">система автоматизированного сбора информации</p>
           <form className="form" onSubmit={handleLogin}>
             <div className="fieldGroup">
@@ -540,18 +544,35 @@ export default function HomePage() {
       <div className="shell">
         <section className="heroCard">
           <div>
-            <div className="brandLine"><h1>ProОбъект</h1><span className="versionBadge">v0.5.5</span></div>
+            <div className="brandLine"><h1>ProОбъект</h1><span className="versionBadge">{APP_VERSION}</span></div>
             <p className="heroSubtitle">система автоматизированного сбора информации</p>
             <p className="heroText">Вы вошли как <b>{roleLabel[user.role]}</b></p>
           </div>
           <div className="topActions">
-            <button className="ghostButton" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>{theme === "light" ? "Темная тема" : "Светлая тема"}</button>
+            <button className="ghostButton" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>{theme === "dark" ? "Светлая тема" : "Темная тема"}</button>
             <button className="ghostButton" onClick={logout}>Выйти</button>
           </div>
         </section>
 
         {message ? <div className={`message ${state}`}>{message}</div> : null}
 
+        <section className="moduleSwitch" aria-label="Разделы ProObject">
+          <button type="button" className={activeModule === "journal" ? "active" : ""} onClick={() => setActiveModule("journal")}>Журнал работ</button>
+          <button type="button" className={activeModule === "map" ? "active" : ""} onClick={() => setActiveModule("map")}>Карта объекта</button>
+        </section>
+
+        {activeModule === "map" ? (
+          <MapObjectModule
+            user={user}
+            bootstrap={bootstrap}
+            objectId={objectId}
+            setObjectId={setObjectId}
+            selectedObject={selectedObject || null}
+            filteredSites={filteredSites}
+            journal={bootstrap.journal}
+            manageable={manageable}
+          />
+        ) : (
         <section className="grid">
           <div className="mainStack">
             <div className="formCard">
@@ -684,19 +705,24 @@ export default function HomePage() {
             ) : null}
 
             {manageable ? (
-              <div className="sideCard">
-                <h3>Роль: {roleLabel[user.role]}</h3>
-                <ul className="checkList">
-                  <li>Заказчик: просмотр истории и фото</li>
-                  <li>Подрядчик: добавление записей и фото</li>
-                  <li>Куратор: управление назначенными объектами</li>
-                  <li>Администратор: полный доступ ко всем объектам</li>
-                </ul>
-              </div>
+              <details className="sideCard collapsibleSideCard">
+                <summary>Права роли</summary>
+                <div className="sideCardBody">
+                  <h3>Роль: {roleLabel[user.role]}</h3>
+                  <ul className="checkList">
+                    <li>Заказчик: просмотр истории и фото</li>
+                    <li>Подрядчик: добавление записей и фото</li>
+                    <li>Куратор: управление назначенными объектами</li>
+                    <li>Администратор: полный доступ ко всем объектам</li>
+                  </ul>
+                </div>
+              </details>
             ) : null}
 
             {manageable ? (
-              <div className="sideCard">
+              <details className="sideCard collapsibleSideCard">
+                <summary>Пользователи</summary>
+                <div className="sideCardBody">
                 <h3>Пользователи</h3>
                 <div className="fieldGroup compact">
                   <label>{editingUser ? "Редактируемый пользователь" : "Новый пользователь"}</label>
@@ -743,11 +769,14 @@ export default function HomePage() {
                     </div>
                   ))}
                 </div>
-              </div>
+                </div>
+              </details>
             ) : null}
 
             {manageable ? (
-              <div className="sideCard">
+              <details className="sideCard collapsibleSideCard">
+                <summary>Управление справочниками</summary>
+                <div className="sideCardBody">
                 <h3>Управление справочниками</h3>
                 <div className="fieldGroup compact">
                   <label>Новый объект</label>
@@ -765,10 +794,12 @@ export default function HomePage() {
                 <div className="objectList">
                   {filteredSites.map((item) => <div key={item.id}><span>{item.name}</span><button onClick={() => deleteSite(item.id)}>×</button></div>)}
                 </div>
-              </div>
+                </div>
+              </details>
             ) : null}
           </aside>
         </section>
+        )}
       </div>
     </main>
   );
