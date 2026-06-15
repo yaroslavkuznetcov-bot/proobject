@@ -20,3 +20,10 @@ Thumbs.db
 
 # Next.js generated
 next-env.d.ts
+
+.next/
+node_modules/
+tsconfig.tsbuildinfo
+*.rar
+*.zip
+structure.txt

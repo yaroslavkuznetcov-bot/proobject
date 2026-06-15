@@ -216,7 +216,13 @@ export default function MapObjectModule({
     }
   }
 
-  function pointFromEvent(event: MouseEvent<HTMLDivElement> | PointerEvent<SVGCircleElement>): Point | null {
+  function pointFromEvent(
+  event:
+    | React.MouseEvent<HTMLDivElement>
+    | React.PointerEvent<SVGCircleElement>
+    | React.PointerEvent<SVGSVGElement>
+    ) 
+  {
     if (!mapRef.current) return null;
     const rect = mapRef.current.getBoundingClientRect();
     const x = ((event.clientX - rect.left) / rect.width) * imageSize.width;
@@ -354,7 +360,7 @@ export default function MapObjectModule({
     setDraftPoints([]);
   }
 
-  function handlePointMove(event: PointerEvent<SVGCircleElement>) {
+  function handlePointMove(event: PointerEvent<SVGSVGElement>) {
     if (!dragPoint || !manageable) return;
     const point = pointFromEvent(event);
     if (!point) return;
@@ -373,7 +379,7 @@ export default function MapObjectModule({
     <div className="mapLabPage embedded">
       <header className="mapLabHeader compact embedded">
         <div>
-          <h1>Карта объекта <span>v0.6.9</span></h1>
+          <h1>Карта объекта <span>v0.6.12</span></h1>
           <p>Интерактивный генплан выбранного объекта: ручная разметка участков, линий и точек с сохранением в Google Sheets.</p>
         </div>
         <div className="mapLabHeaderActions">

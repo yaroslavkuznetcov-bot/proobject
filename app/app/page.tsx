@@ -7,7 +7,7 @@ import MapObjectModule from "./MapObjectModule";
 const CUSTOM_SITE_VALUE = "__custom__";
 const MAX_PHOTO_SIZE_MB = 8;
 const ALL_OBJECTS_VALUE = "__all_objects__";
-const APP_VERSION = "v0.6.9";
+const APP_VERSION = "v0.6.12";
 
 type SubmitState = "idle" | "loading" | "success" | "error";
 type Theme = "light" | "dark";
