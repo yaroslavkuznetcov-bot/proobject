@@ -1829,3 +1829,32 @@ html[data-theme="light"] .mapItemRow.active .mapItemSelect b {
     max-width: 100%;
   }
 }
+
+/* v0.6.13 Map header theme fix */
+
+.mapLabHeader.compact.embedded {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border-color: var(--line) !important;
+}
+
+.mapLabHeader.compact.embedded h1,
+.mapLabHeader.compact.embedded p,
+.mapLabHeader.compact.embedded span {
+  color: inherit !important;
+}
+
+.mapLabHeaderActions button,
+.mapUploadButton,
+.mapZoomGroup.compact {
+  background: var(--surface-solid) !important;
+  color: var(--text) !important;
+  border-color: var(--line) !important;
+}
+
+.mapUploadButton,
+.mapLabHeaderActions > button:not(:disabled) {
+  background: var(--primary) !important;
+  color: var(--bg) !important;
+  border-color: var(--primary) !important;
+}
