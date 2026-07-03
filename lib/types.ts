@@ -51,6 +51,12 @@ export type JournalBootstrapData = {
   users?: ManagedUser[];
 };
 
+export type JournalPhotoPayload = {
+  data: string;
+  fileName: string;
+  mimeType: string;
+};
+
 export type JournalPayload = {
   id?: string;
   login?: string;
@@ -62,4 +68,5 @@ export type JournalPayload = {
   photo?: string;
   fileName?: string;
   fileMimeType?: string;
+  photos?: JournalPhotoPayload[];
 };

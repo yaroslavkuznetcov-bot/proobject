@@ -83,6 +83,67 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+function imageToDataUrl(image: HTMLImageElement, maxSide = 1600, quality = 0.82): string {
+  const canvas = document.createElement("canvas");
+  const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Не удалось подготовить фото");
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", quality);
+}
+
+function compressImageFile(file: File): Promise<{ data: string; fileName: string; mimeType: string }> {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/")) return reject(new Error("Можно прикрепить только изображения"));
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      try {
+        const dataUrl = imageToDataUrl(image);
+        const base64 = dataUrl.split(",")[1];
+        if (!base64) throw new Error("Не удалось сжать фото");
+        const cleanName = file.name.replace(/\.[^.]+$/, "") || "photo";
+        resolve({ data: base64, fileName: `${cleanName}.jpg`, mimeType: "image/jpeg" });
+      } catch (error) {
+        reject(error);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Не удалось прочитать фото"));
+    };
+    image.src = url;
+  });
+}
+
+function splitPhotoUrls(value: string | undefined) {
+  const raw = String(value || "").trim();
+  if (!raw) return [];
+
+  const driveUrls = raw.match(/https:\/\/drive\.google\.com\/file\/d\/[A-Za-z0-9_-]+\/view\?usp=[A-Za-z0-9_-]+/g);
+  if (driveUrls && driveUrls.length > 0) {
+    return Array.from(new Set(driveUrls.map((item) => item.trim()).filter(Boolean)));
+  }
+
+  return raw
+    .split(/\r?\n|\|+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getGoogleDriveFileId(url: string) {
+  return String(url || "").match(/\/file\/d\/([A-Za-z0-9_-]+)/)?.[1] || "";
+}
+
+function driveImagePreviewUrl(url: string) {
+  const fileId = getGoogleDriveFileId(url);
+  return fileId ? `https://drive.google.com/thumbnail?id=${fileId}&sz=w2000` : url;
+}
+
 function formatDate(value: string) {
   if (!value) return "—";
   return new Intl.DateTimeFormat("ru-RU", {
@@ -151,8 +212,8 @@ export default function HomePage() {
   const [siteId, setSiteId] = useState("");
   const [customSite, setCustomSite] = useState("");
   const [work, setWork] = useState("");
-  const [photo, setPhoto] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState("");
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [state, setState] = useState<SubmitState>("idle");
   const [message, setMessage] = useState("");
@@ -168,6 +229,7 @@ export default function HomePage() {
   const [showDownloadOptions, setShowDownloadOptions] = useState(false);
   const [downloadObjectId, setDownloadObjectId] = useState(ALL_OBJECTS_VALUE);
   const [activeModule, setActiveModule] = useState<WorkModule>("journal");
+  const [photoViewer, setPhotoViewer] = useState<{ urls: string[]; index: number } | null>(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -179,14 +241,14 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (!photo) {
-      setPreviewUrl("");
+    if (photos.length === 0) {
+      setPreviewUrls([]);
       return;
     }
-    const url = URL.createObjectURL(photo);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [photo]);
+    const urls = photos.map((file) => URL.createObjectURL(file));
+    setPreviewUrls(urls);
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
+  }, [photos]);
 
   async function loadData() {
     setState("loading");
@@ -333,19 +395,18 @@ export default function HomePage() {
   }
 
   function handlePhotoChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0] || null;
-    if (!file) return setPhoto(null);
-    if (!file.type.startsWith("image/")) {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return setPhotos([]);
+    const wrongFile = files.find((file) => !file.type.startsWith("image/"));
+    if (wrongFile) {
       setState("error");
-      setMessage("Можно прикрепить только изображение");
+      setMessage("Можно прикрепить только изображения");
+      event.target.value = "";
       return;
     }
-    if (file.size > MAX_PHOTO_SIZE_MB * 1024 * 1024) {
-      setState("error");
-      setMessage(`Фото должно быть не больше ${MAX_PHOTO_SIZE_MB} МБ`);
-      return;
-    }
-    setPhoto(file);
+    setState("idle");
+    setMessage(`Выбрано фото: ${files.length}. При сохранении сайт автоматически сожмет их.`);
+    setPhotos(files);
   }
 
   async function saveJournal(event: FormEvent<HTMLFormElement>) {
@@ -369,10 +430,14 @@ export default function HomePage() {
         siteId: selectedSite?.id,
         work: work.trim()
       };
-      if (photo) {
-        payload.photo = await fileToBase64(photo);
-        payload.fileName = photo.name;
-        payload.fileMimeType = photo.type;
+      if (photos.length > 0) {
+        setMessage(`Оптимизируем фото: 0 из ${photos.length}`);
+        const optimizedPhotos = [];
+        for (let index = 0; index < photos.length; index++) {
+          setMessage(`Оптимизируем фото: ${index + 1} из ${photos.length}`);
+          optimizedPhotos.push(await compressImageFile(photos[index]));
+        }
+        payload.photos = optimizedPhotos;
       }
       const response = await fetch("/api/journal", {
         method: editing ? "PATCH" : "POST",
@@ -382,7 +447,7 @@ export default function HomePage() {
       const json = await response.json();
       if (!response.ok || json.status === "ERROR") throw new Error(json.message || "Не удалось сохранить запись");
       setWork("");
-      setPhoto(null);
+      setPhotos([]);
       setEditing(null);
       setState("success");
       setMessage(editing ? "Запись обновлена" : "Запись сохранена");
@@ -501,6 +566,19 @@ export default function HomePage() {
     const json = await response.json();
     if (!response.ok || json.status === "ERROR") setMessage(json.message || "Не удалось удалить пользователя");
     else await loadData();
+  }
+
+  function openPhotoViewer(urls: string[], index = 0) {
+    if (urls.length === 0) return;
+    setPhotoViewer({ urls, index: Math.max(0, Math.min(index, urls.length - 1)) });
+  }
+
+  function shiftPhotoViewer(delta: number) {
+    setPhotoViewer((current) => {
+      if (!current) return current;
+      const nextIndex = (current.index + delta + current.urls.length) % current.urls.length;
+      return { ...current, index: nextIndex };
+    });
   }
 
   if (!user) {
@@ -633,13 +711,18 @@ export default function HomePage() {
                       <textarea id="work" className="field textarea" value={work} onChange={(event) => setWork(event.target.value)} placeholder="Опишите выполненные работы, объемы, замечания" />
                     </div>
                     <div className="uploadBox">
-                      <input id="photo" type="file" accept="image/*" onChange={handlePhotoChange} />
-                      <label htmlFor="photo">{photo ? photo.name : "Выбрать фото или сделать снимок"}</label>
-                      {previewUrl ? <img className="preview" src={previewUrl} alt="Предпросмотр фото" /> : null}
+                      <input id="photo" type="file" accept="image/*" multiple onChange={handlePhotoChange} />
+                      <label htmlFor="photo">{photos.length > 0 ? `Выбрано фото: ${photos.length}` : "Выбрать фото или сделать снимок"}</label>
+                      {previewUrls.length > 0 ? (
+                        <div className="previewGrid">
+                          {previewUrls.slice(0, 6).map((url, index) => <img className="preview" src={url} alt={`Предпросмотр фото ${index + 1}`} key={url} />)}
+                          {previewUrls.length > 6 ? <div className="previewMore">+{previewUrls.length - 6}</div> : null}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="buttonRow">
                       <button className="primaryButton" disabled={isBusy} type="submit">{editing ? "Сохранить изменения" : "Сохранить запись"}</button>
-                      {editing ? <button className="ghostButton" type="button" onClick={() => { setEditing(null); setWork(""); setPhoto(null); }}>Отменить</button> : null}
+                      {editing ? <button className="ghostButton" type="button" onClick={() => { setEditing(null); setWork(""); setPhotos([]); }}>Отменить</button> : null}
                     </div>
                   </>
                 ) : null}
@@ -667,7 +750,15 @@ export default function HomePage() {
                           <span>{entry.site} · {formatDate(entry.date)}</span>
                         </div>
                         <div className="journalActions">
-                          {entry.photoUrl ? <a className="photoLink" href={entry.photoUrl} target="_blank" rel="noreferrer">Фото</a> : <span className="noPhoto">Без фото</span>}
+                          {(() => {
+                            const photoUrls = splitPhotoUrls(entry.photoUrl);
+                            if (photoUrls.length === 0) return <span className="noPhoto">Без фото</span>;
+                            return (
+                              <button className="photoLink" type="button" style={{ border: 0 }} onClick={() => openPhotoViewer(photoUrls, 0)}>
+                                {photoUrls.length === 1 ? "Фото" : `Фото: ${photoUrls.length}`}
+                              </button>
+                            );
+                          })()}
                           {manageable ? <div className="miniActions"><button onClick={() => startEdit(entry)}>Править</button><button onClick={() => deleteEntry(entry.id)}>Удалить</button></div> : null}
                         </div>
                       </div>
@@ -801,6 +892,36 @@ export default function HomePage() {
         </section>
         )}
       </div>
+      {photoViewer ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,.86)", display: "grid", placeItems: "center", padding: 16 }}
+          onClick={() => setPhotoViewer(null)}
+        >
+          <div
+            style={{ width: "min(960px, 100%)", maxHeight: "92vh", border: "1px solid rgba(255,255,255,.18)", borderRadius: 24, background: "#050505", padding: 14, boxShadow: "0 24px 80px rgba(0,0,0,.55)" }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+              <b style={{ color: "#fff" }}>Фото {photoViewer.index + 1} из {photoViewer.urls.length}</b>
+              <div className="miniActions">
+                <a href={photoViewer.urls[photoViewer.index]} target="_blank" rel="noreferrer">Открыть</a>
+                <button type="button" onClick={() => setPhotoViewer(null)}>Закрыть</button>
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: photoViewer.urls.length > 1 ? "44px 1fr 44px" : "1fr", gap: 10, alignItems: "center" }}>
+              {photoViewer.urls.length > 1 ? <button className="ghostButton" type="button" onClick={() => shiftPhotoViewer(-1)}>‹</button> : null}
+              <img
+                src={driveImagePreviewUrl(photoViewer.urls[photoViewer.index])}
+                alt={`Фото ${photoViewer.index + 1}`}
+                style={{ width: "100%", maxHeight: "72vh", objectFit: "contain", borderRadius: 18, background: "#000" }}
+              />
+              {photoViewer.urls.length > 1 ? <button className="ghostButton" type="button" onClick={() => shiftPhotoViewer(1)}>›</button> : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

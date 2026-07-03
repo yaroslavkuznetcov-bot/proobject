@@ -1,4 +1,4 @@
-const VERSION = "ProОбъект API v0.6.9";
+const VERSION = "ProОбъект API v0.6.13";
 
 function doGet(e) {
   try {
@@ -292,11 +292,29 @@ function getData(data) {
   return { status: "OK", objects: allowedObjects, sites: sites, journal: journal, users: getUsers({ login: actor.login }).users || [] };
 }
 
-function createPhoto_(data) {
-  if (!data.photo) return { url: "", fileId: "" };
-  const blob = Utilities.newBlob(Utilities.base64Decode(data.photo), data.fileMimeType || MimeType.JPEG, data.fileName || "photo.jpg");
+function createPhotoFile_(base64, mimeType, fileName) {
+  if (!base64) return { url: "", fileId: "" };
+  const blob = Utilities.newBlob(Utilities.base64Decode(base64), mimeType || MimeType.JPEG, fileName || "photo.jpg");
   const file = DriveApp.getRootFolder().createFile(blob);
+  try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (error) {}
   return { url: file.getUrl(), fileId: file.getId() };
+}
+
+function createPhoto_(data) {
+  return createPhotoFile_(data.photo, data.fileMimeType || MimeType.JPEG, data.fileName || "photo.jpg");
+}
+
+function createPhotos_(data) {
+  const urls = [];
+  if (Array.isArray(data.photos) && data.photos.length > 0) {
+    data.photos.forEach(function(photo, index) {
+      const saved = createPhotoFile_(photo.data || photo.photo, photo.mimeType || photo.fileMimeType || MimeType.JPEG, photo.fileName || ("photo_" + (index + 1) + ".jpg"));
+      if (saved.url) urls.push(saved.url);
+    });
+    return urls;
+  }
+  const saved = createPhoto_(data);
+  return saved.url ? [saved.url] : [];
 }
 
 function saveData(data) {
@@ -308,9 +326,10 @@ function saveData(data) {
   const objectsById = {};
   readObjects_().forEach(function(o) { objectsById[o.id] = o; });
   const objectName = normalize_(data.object) || (objectsById[data.objectId] ? objectsById[data.objectId].name : data.objectId);
-  const photo = createPhoto_(data);
-  getLogSheet_().appendRow([new Date(), actor.login, data.objectId, objectName, data.siteId || "", data.site, data.work, photo.url]);
-  sendNewEntryNotification_(data.objectId, objectName, data.site, data.work, photo.url, actor.login);
+  const photoUrls = createPhotos_(data);
+  const photoValue = photoUrls.join("\n");
+  getLogSheet_().appendRow([new Date(), actor.login, data.objectId, objectName, data.siteId || "", data.site, data.work, photoValue]);
+  sendNewEntryNotification_(data.objectId, objectName, data.site, data.work, photoValue, actor.login);
   return "OK";
 }
 
@@ -324,7 +343,10 @@ function updateJournalEntry(data) {
   const existingObjectId = normalize_(sh.getRange(row, 3).getValue());
   assertObjectAccess_(actor, existingObjectId);
   let photoUrl = String(sh.getRange(row, 8).getValue() || "");
-  if (data.photo) photoUrl = createPhoto_(data).url;
+  if ((Array.isArray(data.photos) && data.photos.length > 0) || data.photo) {
+    const photoUrls = createPhotos_(data);
+    photoUrl = photoUrls.join("\n");
+  }
   sh.getRange(row, 6, 1, 3).setValues([[data.site || sh.getRange(row, 6).getValue(), data.work, photoUrl]]);
   return "OK";
 }
