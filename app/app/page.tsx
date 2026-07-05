@@ -7,7 +7,7 @@ import MapObjectModule from "./MapObjectModule";
 const CUSTOM_SITE_VALUE = "__custom__";
 const MAX_PHOTO_SIZE_MB = 8;
 const ALL_OBJECTS_VALUE = "__all_objects__";
-const APP_VERSION = "v0.6.12";
+const APP_VERSION = "v0.6.13";
 
 type SubmitState = "idle" | "loading" | "success" | "error";
 type Theme = "light" | "dark";
@@ -88,20 +88,58 @@ function imageToDataUrl(image: HTMLImageElement, maxSide = 1600, quality = 0.82)
   const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
   canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
   canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-  const context = canvas.getContext("2d");
+  const context = canvas.getContext("2d", { alpha: false });
   if (!context) throw new Error("Не удалось подготовить фото");
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", quality);
+  const result = canvas.toDataURL("image/jpeg", quality);
+  canvas.width = 1;
+  canvas.height = 1;
+  return result;
 }
 
-function compressImageFile(file: File): Promise<{ data: string; fileName: string; mimeType: string }> {
+function isMobilePhotoDevice() {
+  if (typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
+function pause(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function fallbackPhoto(file: File): Promise<{ data: string; fileName: string; mimeType: string }> {
+  return fileToBase64(file).then((data) => ({
+    data,
+    fileName: file.name || "photo.jpg",
+    mimeType: file.type || "image/jpeg"
+  }));
+}
+
+function compressImageFile(file: File, maxSide = 1600, quality = 0.82, timeoutMs = 15000): Promise<{ data: string; fileName: string; mimeType: string }> {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith("image/")) return reject(new Error("Можно прикрепить только изображения"));
     const url = URL.createObjectURL(file);
     const image = new Image();
+    let finished = false;
+
+    const cleanup = () => {
+      URL.revokeObjectURL(url);
+      image.onload = null;
+      image.onerror = null;
+    };
+
+    const timer = window.setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      reject(new Error("Оптимизация фото заняла слишком много времени"));
+    }, timeoutMs);
+
     image.onload = () => {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timer);
       try {
-        const dataUrl = imageToDataUrl(image);
+        const dataUrl = imageToDataUrl(image, maxSide, quality);
         const base64 = dataUrl.split(",")[1];
         if (!base64) throw new Error("Не удалось сжать фото");
         const cleanName = file.name.replace(/\.[^.]+$/, "") || "photo";
@@ -109,13 +147,18 @@ function compressImageFile(file: File): Promise<{ data: string; fileName: string
       } catch (error) {
         reject(error);
       } finally {
-        URL.revokeObjectURL(url);
+        cleanup();
       }
     };
+
     image.onerror = () => {
-      URL.revokeObjectURL(url);
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timer);
+      cleanup();
       reject(new Error("Не удалось прочитать фото"));
     };
+
     image.src = url;
   });
 }
@@ -431,13 +474,26 @@ export default function HomePage() {
         work: work.trim()
       };
       if (photos.length > 0) {
-        setMessage(`Оптимизируем фото: 0 из ${photos.length}`);
+        const mobile = isMobilePhotoDevice();
         const optimizedPhotos = [];
+        const maxSide = mobile ? 1280 : 1600;
+        const quality = mobile ? 0.72 : 0.82;
+        const timeoutMs = mobile ? 12000 : 18000;
+
+        setMessage(`Оптимизируем фото: 0 из ${photos.length}`);
         for (let index = 0; index < photos.length; index++) {
+          const currentPhoto = photos[index];
           setMessage(`Оптимизируем фото: ${index + 1} из ${photos.length}`);
-          optimizedPhotos.push(await compressImageFile(photos[index]));
+          try {
+            optimizedPhotos.push(await compressImageFile(currentPhoto, maxSide, quality, timeoutMs));
+          } catch {
+            setMessage(`Фото ${index + 1} не удалось оптимизировать. Загружаем исходный файл…`);
+            optimizedPhotos.push(await fallbackPhoto(currentPhoto));
+          }
+          if (mobile) await pause(180);
         }
         payload.photos = optimizedPhotos;
+        setMessage(editing ? "Сохраняем изменения…" : "Сохраняем запись…");
       }
       const response = await fetch("/api/journal", {
         method: editing ? "PATCH" : "POST",
