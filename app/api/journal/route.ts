@@ -36,7 +36,14 @@ async function proxyToAppsScript(action: string, data: unknown) {
 }
 
 export async function POST(request: Request) {
-  const payload = (await request.json()) as JournalPayload;
+  const payload = (await request.json()) as JournalPayload & { action?: string };
+
+  if (payload.action === "appendJournalPhotos") {
+    if (!payload.id || !payload.login) {
+      return NextResponse.json({ message: "Не передан ID записи или пользователь" }, { status: 400 });
+    }
+    return proxyToAppsScript("appendJournalPhotos", payload);
+  }
 
   if (!payload.object || !payload.objectId || !payload.site || !payload.work?.trim()) {
     return NextResponse.json(

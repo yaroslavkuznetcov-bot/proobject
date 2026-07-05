@@ -58,6 +58,7 @@ export type JournalPhotoPayload = {
 };
 
 export type JournalPayload = {
+  action?: string;
   id?: string;
   login?: string;
   object: string;

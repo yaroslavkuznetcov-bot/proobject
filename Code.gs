@@ -1,4 +1,4 @@
-const VERSION = "ProОбъект API v0.6.13";
+const VERSION = "ProОбъект API v0.6.14";
 
 function doGet(e) {
   try {
@@ -22,7 +22,8 @@ function doPost(e) {
     if (action === "addUser") return jsonResponse(addUser(data));
     if (action === "updateUser") return jsonResponse(updateUser(data));
     if (action === "deleteUser") return jsonResponse(deleteUser(data));
-    if (action === "saveData") return jsonResponse({ status: saveData(data) });
+    if (action === "saveData") return jsonResponse(saveData(data));
+    if (action === "appendJournalPhotos") return jsonResponse(appendJournalPhotos(data));
     if (action === "updateJournalEntry") return jsonResponse({ status: updateJournalEntry(data) });
     if (action === "deleteJournalEntry") return jsonResponse({ status: deleteJournalEntry(data) });
     if (action === "addObject") return jsonResponse({ status: addObject(data) });
@@ -328,9 +329,28 @@ function saveData(data) {
   const objectName = normalize_(data.object) || (objectsById[data.objectId] ? objectsById[data.objectId].name : data.objectId);
   const photoUrls = createPhotos_(data);
   const photoValue = photoUrls.join("\n");
-  getLogSheet_().appendRow([new Date(), actor.login, data.objectId, objectName, data.siteId || "", data.site, data.work, photoValue]);
+  const sh = getLogSheet_();
+  sh.appendRow([new Date(), actor.login, data.objectId, objectName, data.siteId || "", data.site, data.work, photoValue]);
+  const row = sh.getLastRow();
   sendNewEntryNotification_(data.objectId, objectName, data.site, data.work, photoValue, actor.login);
-  return "OK";
+  return { status: "OK", id: String(row), photoUrl: photoValue };
+}
+
+function appendJournalPhotos(data) {
+  const actor = getUserByLogin_(data.login || "");
+  if (!actor) throw new Error("Пользователь не найден");
+  if (actor.role !== "administrator" && actor.role !== "curator" && actor.role !== "contractor") throw new Error("Нет прав на добавление фото");
+  const row = Number(data.id);
+  const sh = getLogSheet_();
+  if (!row || row < 2 || row > sh.getLastRow()) throw new Error("Запись не найдена для добавления фото");
+  const objectId = normalize_(sh.getRange(row, 3).getValue());
+  assertObjectAccess_(actor, objectId);
+  const newUrls = createPhotos_(data);
+  if (newUrls.length === 0) return { status: "OK", photoUrl: String(sh.getRange(row, 8).getValue() || "") };
+  const current = String(sh.getRange(row, 8).getValue() || "").trim();
+  const photoValue = current ? current + "\n" + newUrls.join("\n") : newUrls.join("\n");
+  sh.getRange(row, 8).setValue(photoValue);
+  return { status: "OK", photoUrl: photoValue, added: newUrls.length };
 }
 
 function updateJournalEntry(data) {

@@ -7,7 +7,7 @@ import MapObjectModule from "./MapObjectModule";
 const CUSTOM_SITE_VALUE = "__custom__";
 const MAX_PHOTO_SIZE_MB = 8;
 const ALL_OBJECTS_VALUE = "__all_objects__";
-const APP_VERSION = "v0.6.13";
+const APP_VERSION = "v0.6.14";
 
 type SubmitState = "idle" | "loading" | "success" | "error";
 type Theme = "light" | "dark";
@@ -452,6 +452,33 @@ export default function HomePage() {
     setPhotos(files);
   }
 
+  async function uploadJournalPhoto(rowId: string, file: File, index: number, total: number) {
+    const mobile = isMobilePhotoDevice();
+    const maxSide = mobile ? 1280 : 1600;
+    const quality = mobile ? 0.72 : 0.82;
+    const timeoutMs = mobile ? 12000 : 18000;
+    setMessage(`Оптимизируем фото: ${index + 1} из ${total}`);
+
+    let photo;
+    try {
+      photo = await compressImageFile(file, maxSide, quality, timeoutMs);
+    } catch {
+      setMessage(`Фото ${index + 1} не удалось оптимизировать. Загружаем исходный файл…`);
+      photo = await fallbackPhoto(file);
+    }
+
+    if (mobile) await pause(150);
+    setMessage(`Загружаем фото: ${index + 1} из ${total}`);
+    const response = await fetch("/api/journal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "appendJournalPhotos", id: rowId, login: user?.id, photos: [photo] })
+    });
+    const json = await response.json();
+    if (!response.ok || json.status === "ERROR") throw new Error(json.message || `Не удалось загрузить фото ${index + 1}`);
+    if (mobile) await pause(150);
+  }
+
   async function saveJournal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!user || !canWrite(user.role)) return;
@@ -461,7 +488,7 @@ export default function HomePage() {
     if (!work.trim()) return setMessage("Введите выполненные работы");
 
     setState("loading");
-    setMessage(editing ? "Обновляем запись…" : "Сохраняем запись…");
+    setMessage(editing ? "Сохраняем запись…" : "Сохраняем запись…");
 
     try {
       const payload: JournalPayload = {
@@ -473,28 +500,7 @@ export default function HomePage() {
         siteId: selectedSite?.id,
         work: work.trim()
       };
-      if (photos.length > 0) {
-        const mobile = isMobilePhotoDevice();
-        const optimizedPhotos = [];
-        const maxSide = mobile ? 1280 : 1600;
-        const quality = mobile ? 0.72 : 0.82;
-        const timeoutMs = mobile ? 12000 : 18000;
 
-        setMessage(`Оптимизируем фото: 0 из ${photos.length}`);
-        for (let index = 0; index < photos.length; index++) {
-          const currentPhoto = photos[index];
-          setMessage(`Оптимизируем фото: ${index + 1} из ${photos.length}`);
-          try {
-            optimizedPhotos.push(await compressImageFile(currentPhoto, maxSide, quality, timeoutMs));
-          } catch {
-            setMessage(`Фото ${index + 1} не удалось оптимизировать. Загружаем исходный файл…`);
-            optimizedPhotos.push(await fallbackPhoto(currentPhoto));
-          }
-          if (mobile) await pause(180);
-        }
-        payload.photos = optimizedPhotos;
-        setMessage(editing ? "Сохраняем изменения…" : "Сохраняем запись…");
-      }
       const response = await fetch("/api/journal", {
         method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -502,11 +508,20 @@ export default function HomePage() {
       });
       const json = await response.json();
       if (!response.ok || json.status === "ERROR") throw new Error(json.message || "Не удалось сохранить запись");
+
+      const rowId = editing?.id || String(json.id || json.row || "");
+      if (photos.length > 0) {
+        if (!rowId) throw new Error("Запись сохранена, но не удалось получить ID для загрузки фото");
+        for (let index = 0; index < photos.length; index++) {
+          await uploadJournalPhoto(rowId, photos[index], index, photos.length);
+        }
+      }
+
       setWork("");
       setPhotos([]);
       setEditing(null);
       setState("success");
-      setMessage(editing ? "Запись обновлена" : "Запись сохранена");
+      setMessage(photos.length > 0 ? `Запись сохранена. Фото загружено: ${photos.length}` : editing ? "Запись обновлена" : "Запись сохранена");
       await loadData();
     } catch (error) {
       setState("error");
