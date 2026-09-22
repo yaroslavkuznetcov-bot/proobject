@@ -1,0 +1,74 @@
+.page {
+  --ui-font-xs: 12px;
+  --ui-font-md: 14px;
+  --ui-font-lg: 20px;
+  --ui-font-brand: 40px;
+}
+
+.page .heroCard h1 { font-size: var(--ui-font-brand); }
+.page .heroSubtitle,
+.page .heroText,
+.page .moduleSwitch button,
+.page .field,
+.page .fieldGroup > label,
+.page .uploadBox label,
+.page .primaryButton,
+.page .ghostButton,
+.page .journalItem p,
+.page .journalHead strong { font-size: var(--ui-font-md); }
+
+.page .versionBadge,
+.page .cardTitle p,
+.page .statusPill,
+.page .downloadButton,
+.page .journalHead span,
+.page .photoLink,
+.page .noPhoto,
+.page .miniActions button,
+.page .miniActions a,
+.page .hint,
+.page .message,
+.page .previewMore { font-size: var(--ui-font-xs); }
+
+.page .cardTitle h2 { font-size: var(--ui-font-lg); }
+
+.page .statusPill,
+.page .downloadButton {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.page .collapsibleSideCard > summary,
+.page .objectSummary {
+  font-size: var(--ui-font-md);
+  font-weight: 900;
+}
+
+.page .sideCardBody,
+.page .sideCardBody h3,
+.page .sideCardBody p,
+.page .sideCardBody li,
+.page .sideCardBody label,
+.page .sideCardBody .field,
+.page .sideCardBody button,
+.page .sideCardBody .userRow b,
+.page .sideCardBody .userRow span,
+.page .sideCardBody .objectList span,
+.page .objectInfo span,
+.page .objectInfo b,
+.page .objectInfoSection h4 {
+  font-size: var(--ui-font-xs);
+}
+
+.page .sideCardBody h3 {
+  margin: 0 0 10px;
+  font-weight: 800;
+}
