@@ -7,7 +7,7 @@ import MapObjectModule from "./MapObjectModule";
 const CUSTOM_SITE_VALUE = "__custom__";
 const MAX_PHOTO_SIZE_MB = 8;
 const ALL_OBJECTS_VALUE = "__all_objects__";
-const APP_VERSION = "v0.6.14";
+const APP_VERSION = "v0.6.15.1";
 
 type SubmitState = "idle" | "loading" | "success" | "error";
 type Theme = "light" | "dark";
@@ -885,7 +885,6 @@ export default function HomePage() {
               <details className="sideCard collapsibleSideCard">
                 <summary>Пользователи</summary>
                 <div className="sideCardBody">
-                <h3>Пользователи</h3>
                 <div className="fieldGroup compact">
                   <label>{editingUser ? "Редактируемый пользователь" : "Новый пользователь"}</label>
                   <input className="field" value={newUserLogin} onChange={(event) => setNewUserLogin(event.target.value)} placeholder="Логин" />
@@ -939,7 +938,6 @@ export default function HomePage() {
               <details className="sideCard collapsibleSideCard">
                 <summary>Управление справочниками</summary>
                 <div className="sideCardBody">
-                <h3>Управление справочниками</h3>
                 <div className="fieldGroup compact">
                   <label>Новый объект</label>
                   <input className="field" value={newObject} onChange={(event) => setNewObject(event.target.value)} placeholder="Название объекта" />
